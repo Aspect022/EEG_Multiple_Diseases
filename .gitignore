@@ -45,7 +45,7 @@ outputs/logs/
 .idea/
 *.swp
 *.swo
-data/
+
 # OS
 .DS_Store
 Thumbs.db
