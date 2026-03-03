@@ -1,136 +1,40 @@
 import os
-import shutil
-from pathlib import Path
+import subprocess
+import sys
 
-def create_project_structure():
-    """Create the complete project directory structure"""
+def run_command(command, description):
+    print(f"\n--- {description} ---")
+    try:
+        subprocess.check_call(command, shell=True)
+        print("✅ SUCCESS")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ FAILED: {e}")
+        sys.exit(1)
+
+def main():
+    print("🚀 INITIALIZING RTX 5050 ECG PIPELINE ENVIRONMENT 🚀")
     
-    base_dir = Path(".")
+    # Check if inside venv
+    if not (hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)):
+        print("⚠️ WARNING: You are not running inside a virtual environment.")
+        response = input("Do you want to continue anyway? (y/n): ")
+        if response.lower() != 'y':
+            print("Setup aborted.")
+            sys.exit(1)
+            
+    # Install PyTorch
+    print("\nLooking for compatible PyTorch (assuming CUDA 12.1 for modern RTX cards)...")
+    run_command(
+        "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121",
+        "Installing PyTorch Platform"
+    )
     
-    # Define directory structure
-    directories = [
-        # Data directories
-        "data/raw/kaggle_ecg",
-        "data/processed/kaggle_ecg/train",
-        "data/processed/kaggle_ecg/val",
-        "data/processed/kaggle_ecg/test",
-        
-        # Source code
-        "src/data",
-        "src/models/baseline",
-        "src/models/snn",
-        "src/models/transformer",
-        "src/models/quantum",
-        "src/models/hybrid",
-        "src/training",
-        "src/evaluation",
-        "src/utils",
-        
-        # Notebooks
-        "notebooks",
-        
-        # Configs
-        "configs",
-        
-        # Experiments tracking
-        "experiments/results",
-        
-        # Outputs
-        "outputs/checkpoints",
-        "outputs/logs",
-        "outputs/figures",
-        "outputs/metrics",
-        
-        # Documentation
-        "docs",
-        
-        # Scripts
-        "scripts",
-    ]
+    # Install main requirements
+    run_command("pip install -r requirements.txt", "Installing General Dependencies")
     
-    print("Creating project structure...")
-    for directory in directories:
-        dir_path = base_dir / directory
-        dir_path.mkdir(parents=True, exist_ok=True)
-        
-        # Create __init__.py for Python packages
-        if directory.startswith("src/"):
-            init_file = dir_path / "__init__.py"
-            init_file.touch()
-    
-    print("✓ Project structure created successfully!")
-    
-    # Create .gitignore
-    gitignore_content = """
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
-venv/
-ENV/
-env/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb_checkpoints/
-
-# Data (don't commit large datasets)
-data/raw/
-data/processed/
-*.csv
-*.dat
-*.hea
-
-# Models and outputs
-outputs/checkpoints/*.pth
-outputs/checkpoints/*.pt
-*.pth
-*.pt
-
-# Logs
-outputs/logs/
-*.log
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Experiment results (too large)
-experiments/results/*/*.pth
-experiments/results/*/*.pkl
-"""
-    
-    with open(".gitignore", "w") as f:
-        f.write(gitignore_content)
-    
-    print("✓ .gitignore created")
-    
-    return True
+    print("\n🎉 ENVIRONMENT SETUP COMPLETE! 🎉")
+    print("You can now run the pipeline using:")
+    print("python unified_pipeline.py\n")
 
 if __name__ == "__main__":
-    create_project_structure()
+    main()
