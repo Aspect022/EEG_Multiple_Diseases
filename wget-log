@@ -1,0 +1,245 @@
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14609_hr.dat’
+
+
+
+2025-11-18 18:23:09 (115 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14609_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:09--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14609_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 609 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14609_hr.hea’
+
+
+
+2025-11-18 18:23:10 (28.7 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14609_hr.hea’ saved [609/609]
+
+--2025-11-18 18:23:10--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14610_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14610_hr.dat’
+
+                   physionet.org/files/  40%[===============================>                                               ]  47.64K   223KB/s                                 physionet.org/files/p  67%[====================================================>                          ]  79.64K   153KB/s                                physionet.org/files/pt  95%[==========================================================================>    ] 111.64K   140KB/s               physionet.org/files/ptb-xl/1.0.3/record 100%[==============================================================================>] 117.19K   145KB/s    in 0.8s    
+
+2025-11-18 18:23:11 (145 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14610_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:11--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14610_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 601 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14610_hr.hea’
+
+     0K                                                       100% 67.3M=0s
+
+2025-11-18 18:23:12 (67.3 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14610_hr.hea’ saved [601/601]
+
+--2025-11-18 18:23:12--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14611_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14611_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  103K 1s
+    50K .......... .......... .......... .......... .......... 85%  151K 0s
+   100K .......... .......                                    100% 1.34M=0.8s
+
+2025-11-18 18:23:13 (141 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14611_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:13--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14611_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 611 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14611_hr.hea’
+
+     0K                                                       100% 52.1M=0s
+
+2025-11-18 18:23:13 (52.1 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14611_hr.hea’ saved [611/611]
+
+--2025-11-18 18:23:13--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14612_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14612_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  164K 0s
+    50K .......... .......... .......... .......... .......... 85%  107K 0s
+   100K .......... .......                                    100%  586K=0.8s
+
+2025-11-18 18:23:15 (146 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14612_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:15--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14612_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 608 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14612_hr.hea’
+
+     0K                                                       100% 83.4M=0s
+
+2025-11-18 18:23:15 (83.4 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14612_hr.hea’ saved [608/608]
+
+--2025-11-18 18:23:15--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14613_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14613_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  173K 0s
+    50K .......... .......... .......... .......... .......... 85%  113K 0s
+   100K .......... .......                                    100% 1.20M=0.7s
+
+2025-11-18 18:23:16 (157 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14613_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:16--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14613_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 600 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14613_hr.hea’
+
+     0K                                                       100% 87.5M=0s
+
+2025-11-18 18:23:17 (87.5 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14613_hr.hea’ saved [600/600]
+
+--2025-11-18 18:23:17--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14614_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14614_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  188K 0s
+    50K .......... .......... .......... .......... .......... 85%  186K 0s
+   100K .......... .......                                    100%  993K=0.6s
+
+2025-11-18 18:23:18 (212 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14614_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:18--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14614_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 606 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14614_hr.hea’
+
+     0K                                                       100% 85.2M=0s
+
+2025-11-18 18:23:18 (85.2 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14614_hr.hea’ saved [606/606]
+
+--2025-11-18 18:23:18--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14615_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14615_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  158K 0s
+    50K .......... .......... .......... .......... .......... 85%  246K 0s
+   100K .......... .......                                    100%  398K=0.6s
+
+2025-11-18 18:23:19 (208 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14615_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:19--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14615_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 617 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14615_hr.hea’
+
+     0K                                                       100% 89.1M=0s
+
+2025-11-18 18:23:19 (89.1 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14615_hr.hea’ saved [617/617]
+
+--2025-11-18 18:23:19--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14616_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14616_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  190K 0s
+    50K .......... .......... .......... .......... .......... 85%  185K 0s
+   100K .......... .......                                    100% 1.12M=0.5s
+
+2025-11-18 18:23:20 (214 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14616_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:20--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14616_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 603 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14616_hr.hea’
+
+     0K                                                       100% 81.5M=0s
+
+2025-11-18 18:23:21 (81.5 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14616_hr.hea’ saved [603/603]
+
+--2025-11-18 18:23:21--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14617_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14617_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  153K 0s
+    50K .......... .......... .......... .......... .......... 85%  240K 0s
+   100K .......... .......                                    100%  910K=0.6s
+
+2025-11-18 18:23:22 (211 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14617_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:22--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14617_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 605 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14617_hr.hea’
+
+     0K                                                       100% 68.9M=0s
+
+2025-11-18 18:23:22 (68.9 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14617_hr.hea’ saved [605/605]
+
+--2025-11-18 18:23:22--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14618_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14618_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  178K 0s
+    50K .......... .......... .......... .......... .......... 85%  169K 0s
+   100K .......... .......                                    100%  517K=0.6s
+
+2025-11-18 18:23:23 (192 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14618_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:23--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14618_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 605 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14618_hr.hea’
+
+     0K                                                       100% 89.7M=0s
+
+2025-11-18 18:23:23 (89.7 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14618_hr.hea’ saved [605/605]
+
+--2025-11-18 18:23:23--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14619_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14619_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  184K 0s
+    50K .......... .......... .......... .......... .......... 85%  181K 0s
+   100K .......... .......                                    100% 1.35M=0.6s
+
+2025-11-18 18:23:24 (209 KB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14619_hr.dat’ saved [120000/120000]
+
+--2025-11-18 18:23:24--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14619_hr.hea
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 606 [text/plain]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14619_hr.hea’
+
+     0K                                                       100% 67.2M=0s
+
+2025-11-18 18:23:25 (67.2 MB/s) - ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14619_hr.hea’ saved [606/606]
+
+--2025-11-18 18:23:25--  https://physionet.org/files/ptb-xl/1.0.3/records500/14000/14620_hr.dat
+Reusing existing connection to physionet.org:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 120000 (117K) [application/octet-stream]
+Saving to: ‘physionet.org/files/ptb-xl/1.0.3/records500/14000/14620_hr.dat’
+
+     0K .......... .......... .......... .......... .......... 42%  152K 0s
+    50K .......... .......... .......... .......... .......... 85%  201K 0s
+   100K .......... .
