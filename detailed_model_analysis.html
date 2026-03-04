@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Detailed Analysis of ECG Classification Architectures</title>
+    <!-- Include html2pdf.js for Client-Side PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+          sans-serif;
+        line-height: 1.6;
+        color: #333;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 40px 20px;
+        background-color: #f9f9f9;
+      }
+      .container {
+        background: #fff;
+        padding: 40px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      h1,
+      h2,
+      h3 {
+        color: #24292e;
+        border-bottom: 1px solid #eaecef;
+        padding-bottom: 0.3em;
+      }
+      h1 {
+        font-size: 2em;
+      }
+      h2 {
+        font-size: 1.5em;
+        margin-top: 1.5em;
+      }
+      h3 {
+        font-size: 1.25em;
+        border-bottom: none;
+        margin-top: 1em;
+      }
+      p,
+      ul,
+      li {
+        margin-top: 0;
+        margin-bottom: 16px;
+      }
+      code {
+        padding: 0.2em 0.4em;
+        margin: 0;
+        font-size: 85%;
+        background-color: rgba(27, 31, 35, 0.05);
+        border-radius: 3px;
+        font-family:
+          SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+      }
+      hr {
+        height: 0.25em;
+        padding: 0;
+        margin: 24px 0;
+        background-color: #e1e4e8;
+        border: 0;
+      }
+      .download-btn {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: #0366d6;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        font-size: 16px;
+        border-radius: 5px;
+        cursor: pointer;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        z-index: 1000;
+      }
+      .download-btn:hover {
+        background-color: #0056b3;
+      }
+      /* Hide button in print view */
+      @media print {
+        .download-btn {
+          display: none;
+        }
+        body {
+          background: white;
+        }
+        .container {
+          box-shadow: none;
+          padding: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Download Trigger Button -->
+    <button class="download-btn" onclick="downloadPDF()">
+      ⬇️ Download as PDF
+    </button>
+
+    <!-- Content Target for PDF -->
+    <div class="container" id="report-content">
+      <h1>Detailed Analysis of ECG Classification Architectures</h1>
+      <p>
+        This report provides an in-depth, meticulous breakdown of the three
+        cutting-edge paradigms developed for the PTB-XL ECG Apnea Classification
+        framework.
+      </p>
+      <p>
+        Each model—Spiking Neural Network (SNN), Vision Transformer (ViT/Swin),
+        and Quantum Hybrid CNN—targets continuous wavelet transform (CWT)
+        scalograms representing 12-channel 2D ECG spatial-temporal states. Below
+        are the precise configurations, features, and mechanisms that define
+        their implementations.
+      </p>
+
+      <hr />
+
+      <h2>1. Vision Transformer (ViT / Swin Transformer)</h2>
+      <p><em>Referred to contextually as BIT/ViT.</em></p>
+
+      <h3>Architecture Overview</h3>
+      <p>
+        The model (<code>SwinECGClassifier</code>) leverages the
+        <strong>Swin Transformer</strong> (Shifted Window) architecture,
+        wrapping the <code>timm</code> implementation for ECG sequence learning.
+        Standard Vision Transformers (ViTs) compute global self-attention with
+        quadratic complexity <em>O(N²)</em>, which is computationally
+        prohibitive for high-resolution scalograms. The Swin architecture
+        mitigates this using <strong>Shifted Window Attention</strong>.
+      </p>
+
+      <h3>Detailed Mechanisms</h3>
+      <ul>
+        <li>
+          <strong>Base Type:</strong>
+          <code>swin_tiny_patch4_window7_224</code> (28M parameters, pre-trained
+          on ImageNet).
+        </li>
+        <li>
+          <strong>Window Logic:</strong> The image is divided into
+          non-overlapping local windows of size 7x7. Self-attention is computed
+          locally (<em>O(N)</em> complexity). To allow cross-window
+          communication, successive layers shift the window partition by a
+          displacement of (M/2, M/2) pixels.
+        </li>
+        <li>
+          <strong>Patch Size:</strong> 4x4. Input resolution is exactly 224x224.
+        </li>
+        <li>
+          <strong>Layers & Channels:</strong> The hierarchical architecture
+          employs 4 stages. The embedding dimension undergoes a 2x multiplier at
+          each stage, eventually resulting in
+          <code>embed_dim * 8</code> features before the final classifier.
+        </li>
+        <li>
+          <strong>Classification Head:</strong> Custom-built via
+          <code>nn.Sequential(nn.LayerNorm, nn.Dropout, nn.Linear)</code>
+          mapping the deeply extracted hierarchical features to the target ECG
+          diagnostic classes.
+        </li>
+        <li>
+          <strong>Regularization & Training:</strong>
+          <ul>
+            <li>Dropout Rate: Configurable, default <code>0.0</code>.</li>
+            <li>Stochastic Depth Rate (Drop Path): <code>0.1</code>.</li>
+            <li>
+              Linear Probing Option: Equipped with a
+              <code>freeze_backbone</code> command to freeze all weights except
+              the classification head.
+            </li>
+          </ul>
+        </li>
+      </ul>
+
+      <hr />
+
+      <h2>2. Spiking Neural Network (SNN / SNL)</h2>
+      <p><em>Referred to contextually as SNL.</em></p>
+
+      <h3>Architecture Overview</h3>
+      <p>
+        The SNN model (<code>SpikingResNet</code>) is built on a neuromorphic
+        computing paradigm. Rather than continuous floating-point activations,
+        it propagates discrete binary events (1 or 0 spikes). This mimics
+        biological neural activity and reduces active power consumption
+        dramatically on specialized hardware (e.g., Intel Loihi).
+      </p>
+
+      <h3>Detailed Mechanisms</h3>
+      <ul>
+        <li>
+          <strong>Backbone:</strong> ResNet-18 skeleton, where traditional
+          continuous <code>ReLU</code> activation functions are completely
+          replaced by Spiking Neurons.
+        </li>
+        <li>
+          <strong>Neuron Model (LIF):</strong>
+          <strong>Leaky Integrate-and-Fire</strong> (<code>snn.Leaky</code> from
+          <code>snntorch</code>).
+          <ul>
+            <li>
+              <em>Mechanism:</em> A neuron maintains a membrane potential U(t).
+              This potential "leaks" or decays over time by a factor of β. When
+              incoming stimulus pushes U(t) over a threshold V<sub>th</sub>, the
+              neuron emits a spike S(t)=1 and the potential is reset.
+            </li>
+            <li><em>Decay Rate (β):</em> Defined as <code>0.9</code>.</li>
+            <li>
+              <em>Threshold (V<sub>th</sub>):</em> Standardized at
+              <code>1.0</code>.
+            </li>
+          </ul>
+        </li>
+        <li>
+          <strong>Temporal Dynamics:</strong> The model simulates time via a
+          temporal execution loop. The static 2D ECG scalogram image is
+          repeatedly presented to the network for T=25 discrete timesteps. The
+          final prediction relies on the firing rate distribution over these
+          T=25 steps.
+        </li>
+        <li>
+          <strong>Surrogate Training:</strong> Spikes are non-differentiable
+          step functions (Heaviside). To train via standard Backpropagation
+          Through Time (BPTT), the network uses a
+          <strong>Surrogate Gradient</strong>.
+          <ul>
+            <li>
+              <em>Function:</em> <code>fast_sigmoid</code> with a slope constant
+              of <code>25</code>. During the backward pass, the strict step
+              function is approximated by a smooth sigmoid derivative to allow
+              gradient flow.
+            </li>
+          </ul>
+        </li>
+      </ul>
+
+      <hr />
+
+      <h2>3. Hybrid Quantum-Classical CNN (Fusion)</h2>
+
+      <h3>Architecture Overview</h3>
+      <p>
+        The Quantum Hybrid model (<code>HybridQuantumCNN</code>) is a
+        <strong>fusion architecture</strong>. It seamlessly integrates heavy
+        classical Convolutional Neural Networks (CNN) with a highly
+        parameterized Quantum Variational Circuit (QVC) leveraging the
+        <code>PennyLane</code> and <code>PyTorch</code> frameworks.
+      </p>
+
+      <h3>The Reason for Fusing</h3>
+      <p>
+        Pure quantum simulation is computationally explosive (<em>O(2ᴺ)</em>
+        logic tracking). A full-scale raw input quantum neural network is
+        intractable on a local RTX 5050 for high-resolution images.
+        <strong>The Fusion Strategy</strong> dictates that classical Conv2D
+        layers heavily downsample and extract initial dense features (C=64 → 128
+        → 256) <em>before</em> bottlenecking into the quantum dimension. The
+        quantum layer acts as a uniquely correlated, entangled feature filter
+        that classical logic cannot efficiently replicate.
+      </p>
+
+      <h3>Detailed Mechanisms</h3>
+      <ul>
+        <li>
+          <strong>Classical Front-End:</strong> Three blocks of
+          <code>Conv2d</code> → <code>BatchNorm2d</code> → <code>ReLU</code> →
+          <code>MaxPool2d</code> (Stride 2), heavily reducing the spatial
+          224x224 input down to a manageable feature map.
+        </li>
+        <li>
+          <strong>Quantum Backend (Quanv Layer):</strong>
+          <ul>
+            <li><em>Number of Qubits (<code>n_qubits</code>):</em> 4.</li>
+            <li>
+              <em>Quantum Depth (<code>q_depth</code> / Layers):</em> 2.
+            </li>
+            <li>
+              <em>Input Encoding:</em> Classical float data is encoded into the
+              quantum state using <strong>Angle Embedding</strong>.
+              Specifically, the vector elements parameterize Pauli-R<sub>y</sub>
+              rotations: R<sub>y</sub>(x<sub>i</sub> · π) across the qubits.
+            </li>
+            <li>
+              <em>Parametric Rotations:</em> To learn, the quantum layer
+              utilizes differentiable parametric rotations
+              R<sub>x</sub>(θ<sub>1</sub>), R<sub>y</sub>(θ<sub>2</sub>), and
+              R<sub>z</sub>(θ<sub>3</sub>) for each qubit.
+            </li>
+            <li>
+              <em>Type of Entanglement:</em> A <strong>Ring Topology</strong> is
+              enforced utilizing CNOT gates (<code
+                >qml.CNOT(wires=[qubit, (qubit + 1) % n_qubits])</code
+              >). This linearly tangles q<sub>0</sub> → q<sub>1</sub> → q<sub
+                >2</sub
+              >
+              → q<sub>3</sub> → q<sub>0</sub>, creating strictly non-classical
+              super-positional correlations.
+            </li>
+            <li>
+              <em>Measurement:</em> The output of the circuit collapses via the
+              <strong>Expectation Value</strong> measuring the Pauli-Z operator
+              (⟨Z⟩) across all 4 qubits.
+            </li>
+          </ul>
+        </li>
+      </ul>
+
+      <hr />
+
+      <h2>4. Universal Pipeline Triggers (Enabled Features)</h2>
+      <p>
+        All three models are seamlessly executed inside
+        <code>unified_pipeline.py</code>. Key automated quality-of-life and
+        performance mechanisms strictly active are:
+      </p>
+      <ul>
+        <li>
+          <strong>Mixed Precision (AMP):</strong> Standardized. Halves runtime
+          memory by executing volatile layers in <code>FP16</code> via
+          <code>torch.cuda.amp.autocast()</code>, preserving 6GB VRAM bounds on
+          the RTX 5050.
+        </li>
+        <li>
+          <strong>Gradient Accumulation:</strong> Step count set to
+          <code>4</code>. Mimics the stability of evaluating larger batches
+          (effective batch size = 64) despite sequential physical hardware
+          limits (batch size = 16).
+        </li>
+        <li>
+          <strong>Early Stopping:</strong> Enabled unconditionally.
+          <ul>
+            <li>
+              <em>Patience:</em> Set to <code>5</code> epochs. If Macro F1-Score
+              does not strictly improve within 5 temporal periods, training
+              completely stops to prevent overfitting.
+            </li>
+          </ul>
+        </li>
+        <li>
+          <strong>Scheduler Constraints:</strong>
+          <code>CosineAnnealingLR</code> actively curves the learning rate
+          gradually smoothing parameter approach towards the optimal minima.
+        </li>
+        <li>
+          <strong>Reproducibility Controls:</strong> Full
+          <code>seed_everything(42)</code> ensures the CUDNN backend operates
+          deterministically when randomizers initiate.
+        </li>
+      </ul>
+    </div>
+
+    <!-- Script to execute the Download to PDF logic -->
+    <script>
+      function downloadPDF() {
+        const element = document.getElementById("report-content");
+
+        // Adjust options for clean PDF output
+        const opt = {
+          margin: [10, 10, 10, 10], // top, left, bottom, right in mm
+          filename: "detailed_model_analysis.pdf",
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        };
+
+        // Call the library function to process the HTML container
+        html2pdf().set(opt).from(element).save();
+      }
+    </script>
+  </body>
+</html>
