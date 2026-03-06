@@ -6,6 +6,12 @@ from .hybrid_cnn import (
     QuantumConvLayer,
     QuanvFilter,
     create_hybrid_quantum_cnn,
+    get_quantum_device,
+    apply_entanglement,
+    apply_rotations,
+    VALID_ROTATIONS,
+    VALID_ENTANGLEMENTS,
+    ROTATION_PARAMS,
 )
 
 __all__ = [
@@ -14,4 +20,10 @@ __all__ = [
     'QuantumConvLayer',
     'QuanvFilter',
     'create_hybrid_quantum_cnn',
+    'get_quantum_device',
+    'apply_entanglement',
+    'apply_rotations',
+    'VALID_ROTATIONS',
+    'VALID_ENTANGLEMENTS',
+    'ROTATION_PARAMS',
 ]

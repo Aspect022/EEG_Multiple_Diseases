@@ -5,7 +5,17 @@ from .spiking_resnet import (
     SpikingResNet1D,
     SpikingBasicBlock,
     SpikingConv2d,
+    QuadraticIF,
+    create_neuron,
     create_spiking_resnet,
+)
+
+from .spiking_vit import (
+    SpikingVisionTransformer,
+    SpikingSelfAttention,
+    SpikingPatchEmbedding,
+    SpikingTransformerBlock,
+    create_spiking_vit,
 )
 
 __all__ = [
@@ -13,5 +23,12 @@ __all__ = [
     'SpikingResNet1D',
     'SpikingBasicBlock',
     'SpikingConv2d',
+    'QuadraticIF',
+    'create_neuron',
     'create_spiking_resnet',
+    'SpikingVisionTransformer',
+    'SpikingSelfAttention',
+    'SpikingPatchEmbedding',
+    'SpikingTransformerBlock',
+    'create_spiking_vit',
 ]

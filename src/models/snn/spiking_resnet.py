@@ -1,267 +1,234 @@
 """
-Spiking Neural Network ResNet for ECG Classification.
+Spiking Neural Network models based on ResNet architecture.
 
-This module implements a Spiking ResNet using snntorch with Leaky Integrate-and-Fire
-(LIF) neurons. The architecture converts 2D inputs (scalograms) through spiking
-convolutions with temporal dynamics.
+Supports two neuron types:
+- LIF (Leaky Integrate-and-Fire): Standard linear membrane dynamics.
+- QIF (Quadratic Integrate-and-Fire): Nonlinear quadratic membrane dynamics.
 
-Reference: 
-- snntorch: https://snntorch.readthedocs.io/
-- Spiking ResNets: https://arxiv.org/abs/2108.05340
+References:
+    - LIF: snntorch.Leaky with surrogate gradient (fast_sigmoid).
+    - QIF: tau * dv/dt = v^2 + mu(t), spike at v >= v_th, reset to v_reset.
+      (Izhikevich, 2007; Latham et al., 2000)
 """
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import Optional, Tuple, List
 import snntorch as snn
 from snntorch import surrogate
+from typing import Tuple, Optional
 
 
-class SpikingConv2d(nn.Module):
+# ==========================================================================
+# Quadratic Integrate-and-Fire Neuron
+# ==========================================================================
+
+class QuadraticIF(nn.Module):
     """
-    Spiking convolutional layer with LIF neuron.
-    
-    Combines a standard Conv2d with batch normalization and a LIF neuron
-    that produces spike outputs.
-    
+    Quadratic Integrate-and-Fire (QIF) neuron model.
+
+    Membrane dynamics (discrete):
+        v[t+1] = v[t] + (dt/tau) * (v[t]^2 + mu[t])
+        if v[t+1] >= v_th: spike, reset v -> v_reset
+
+    Compatible with snntorch API: call returns spike tensor (single output).
+
     Args:
-        in_channels: Number of input channels.
-        out_channels: Number of output channels.
-        kernel_size: Convolution kernel size.
-        stride: Convolution stride. Default: 1.
-        padding: Convolution padding. Default: 0.
-        beta: LIF neuron decay rate. Default: 0.9.
-        spike_grad: Surrogate gradient function. Default: fast_sigmoid.
-        threshold: Spike threshold. Default: 1.0.
+        threshold: Spiking threshold. Default: 1.0.
+        v_reset: Reset voltage after spike. Default: -1.0.
+        tau: Membrane time constant. Default: 1.0.
+        dt: Integration timestep. Default: 0.1.
+        spike_grad: Surrogate gradient function.
     """
-    
+
     def __init__(
         self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size: int,
-        stride: int = 1,
-        padding: int = 0,
-        beta: float = 0.9,
-        spike_grad: Optional[callable] = None,
         threshold: float = 1.0,
+        v_reset: float = -1.0,
+        tau: float = 1.0,
+        dt: float = 0.1,
+        spike_grad=None,
+        **kwargs,
     ):
         super().__init__()
-        
-        self.conv = nn.Conv2d(
-            in_channels, out_channels, kernel_size,
-            stride=stride, padding=padding, bias=False
-        )
-        self.bn = nn.BatchNorm2d(out_channels)
-        
+        self.threshold = threshold
+        self.v_reset = v_reset
+        self.tau = tau
+        self.dt = dt
+
         if spike_grad is None:
             spike_grad = surrogate.fast_sigmoid(slope=25)
-        
-        self.lif = snn.Leaky(
-            beta=beta,
-            spike_grad=spike_grad,
-            threshold=threshold,
-            init_hidden=True,
-        )
-        
-    def forward(self, x: torch.Tensor, mem: Optional[torch.Tensor] = None):
-        """
-        Forward pass through spiking conv layer.
-        
-        Args:
-            x: Input tensor of shape (B, C, H, W).
-            mem: Optional membrane potential from previous timestep.
-            
-        Returns:
-            Tuple of (spikes, membrane_potential).
-        """
-        x = self.conv(x)
-        x = self.bn(x)
-        spk, mem = self.lif(x, mem)
-        return spk, mem
+        self.spike_grad = spike_grad
 
+        self.mem = None
+
+    def init_leaky(self):
+        """Reset membrane potential (snntorch-compatible name)."""
+        self.mem = None
+
+    def reset_mem(self):
+        """Reset membrane potential."""
+        self.mem = None
+
+    def _init_mem(self, input_: torch.Tensor) -> torch.Tensor:
+        return torch.full_like(input_, self.v_reset)
+
+    def forward(self, input_: torch.Tensor) -> torch.Tensor:
+        """
+        Single timestep forward. Returns spike tensor only.
+
+        Args:
+            input_: Input current (*).
+        Returns:
+            Spike tensor (*).
+        """
+        if self.mem is None:
+            self.mem = self._init_mem(input_)
+
+        # QIF dynamics: v += (dt/tau) * (v^2 + input)
+        mem_clamped = torch.clamp(self.mem, min=-10.0, max=10.0)
+        new_mem = mem_clamped + (self.dt / self.tau) * (mem_clamped ** 2 + input_)
+
+        # Spike detection with surrogate gradient
+        spike = self.spike_grad(new_mem - self.threshold)
+
+        # Reset where spike occurred
+        new_mem = new_mem * (1.0 - spike.detach()) + self.v_reset * spike.detach()
+        self.mem = new_mem
+
+        return spike
+
+
+# ==========================================================================
+# Neuron Factory
+# ==========================================================================
+
+def create_neuron(neuron_type: str = 'lif', beta: float = 0.9, spike_grad=None, **kwargs):
+    """
+    Factory to create a spiking neuron.
+
+    Args:
+        neuron_type: 'lif' or 'qif'.
+        beta: Decay rate for LIF.
+        spike_grad: Surrogate gradient function.
+    Returns:
+        Spiking neuron module. Call with (input) -> spike.
+    """
+    if spike_grad is None:
+        spike_grad = surrogate.fast_sigmoid(slope=25)
+
+    if neuron_type == 'lif':
+        return snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True)
+    elif neuron_type == 'qif':
+        return QuadraticIF(spike_grad=spike_grad, **kwargs)
+    else:
+        raise ValueError(f"Unknown neuron_type: {neuron_type}. Use 'lif' or 'qif'.")
+
+
+# ==========================================================================
+# Spiking Conv2d
+# ==========================================================================
+
+class SpikingConv2d(nn.Module):
+    """Conv2d + BN + spiking neuron."""
+
+    def __init__(self, in_ch, out_ch, kernel_size=3, stride=1, padding=1,
+                 neuron_type='lif', beta=0.9):
+        super().__init__()
+        self.conv = nn.Conv2d(in_ch, out_ch, kernel_size, stride=stride, padding=padding, bias=False)
+        self.bn = nn.BatchNorm2d(out_ch)
+        self.neuron = create_neuron(neuron_type=neuron_type, beta=beta)
+
+    def forward(self, x):
+        return self.neuron(self.bn(self.conv(x)))
+
+
+# ==========================================================================
+# Spiking Basic Block
+# ==========================================================================
 
 class SpikingBasicBlock(nn.Module):
-    """
-    Spiking version of ResNet BasicBlock.
-    
-    Contains two spiking conv layers with a residual connection.
-    The residual is added to the membrane potential before spiking.
-    
-    Args:
-        in_channels: Number of input channels.
-        out_channels: Number of output channels.
-        stride: Stride for first convolution. Default: 1.
-        downsample: Optional downsampling layer for residual. Default: None.
-        beta: LIF neuron decay rate. Default: 0.9.
-    """
-    
+    """Spiking residual block."""
     expansion = 1
-    
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        stride: int = 1,
-        downsample: Optional[nn.Module] = None,
-        beta: float = 0.9,
-    ):
-        super().__init__()
-        
-        spike_grad = surrogate.fast_sigmoid(slope=25)
-        
-        self.conv1 = nn.Conv2d(
-            in_channels, out_channels, 3,
-            stride=stride, padding=1, bias=False
-        )
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.lif1 = snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True)
-        
-        self.conv2 = nn.Conv2d(
-            out_channels, out_channels, 3,
-            stride=1, padding=1, bias=False
-        )
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.lif2 = snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True)
-        
-        self.downsample = downsample
-        
-    def forward(
-        self,
-        x: torch.Tensor,
-        mem1: Optional[torch.Tensor] = None,
-        mem2: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Forward pass through spiking basic block.
-        
-        Args:
-            x: Input spikes of shape (B, C, H, W).
-            mem1: Membrane potential for first LIF.
-            mem2: Membrane potential for second LIF.
-            
-        Returns:
-            Tuple of (output_spikes, mem1, mem2).
-        """
-        identity = x
-        
-        # First conv + LIF
-        out = self.conv1(x)
-        out = self.bn1(out)
-        spk1, mem1 = self.lif1(out, mem1)
-        
-        # Second conv (no spike yet, add residual first)
-        out = self.conv2(spk1)
-        out = self.bn2(out)
-        
-        # Downsample residual if needed
-        if self.downsample is not None:
-            identity = self.downsample(x)
-        
-        # Add residual to membrane potential before spiking
-        out = out + identity
-        spk2, mem2 = self.lif2(out, mem2)
-        
-        return spk2, mem1, mem2
 
+    def __init__(self, in_planes, planes, stride=1, neuron_type='lif', beta=0.9):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_planes, planes, 3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.neuron1 = create_neuron(neuron_type=neuron_type, beta=beta)
+
+        self.conv2 = nn.Conv2d(planes, planes, 3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.neuron2 = create_neuron(neuron_type=neuron_type, beta=beta)
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != planes * self.expansion:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_planes, planes * self.expansion, 1, stride=stride, bias=False),
+                nn.BatchNorm2d(planes * self.expansion),
+            )
+
+    def forward(self, x):
+        identity = self.shortcut(x)
+        out = self.neuron1(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out = out + identity
+        out = self.neuron2(out)
+        return out
+
+
+# ==========================================================================
+# Spiking ResNet
+# ==========================================================================
 
 class SpikingResNet(nn.Module):
     """
-    Spiking ResNet for image classification.
-    
-    Implements a ResNet architecture using spiking neurons (LIF) for 
-    temporal processing of static images. The input is presented across
-    multiple timesteps, and the output is the average spike rate of
-    the output neurons.
-    
+    Spiking ResNet for scalogram-based ECG classification.
+
     Args:
-        block: Block type (SpikingBasicBlock).
-        layers: List of number of blocks per stage.
-        num_classes: Number of output classes. Default: 5.
-        in_channels: Number of input channels. Default: 3.
-        num_timesteps: Number of simulation timesteps. Default: 25.
-        beta: LIF neuron decay rate. Default: 0.9.
-        
-    Example:
-        >>> model = SpikingResNet.resnet18(num_classes=5, num_timesteps=25)
-        >>> x = torch.randn(4, 3, 224, 224)
-        >>> output = model(x)  # (4, 5)
+        block: Residual block class.
+        num_blocks: Blocks per stage.
+        num_classes: Output classes. Default: 5.
+        in_channels: Input channels. Default: 3.
+        num_timesteps: Temporal steps. Default: 25.
+        neuron_type: 'lif' or 'qif'. Default: 'lif'.
+        beta: LIF decay rate. Default: 0.9.
     """
-    
-    def __init__(
-        self,
-        block,
-        layers: List[int],
-        num_classes: int = 5,
-        in_channels: int = 3,
-        num_timesteps: int = 25,
-        beta: float = 0.9,
-    ):
+
+    def __init__(self, block, num_blocks, num_classes=5, in_channels=3,
+                 num_timesteps=25, neuron_type='lif', beta=0.9):
         super().__init__()
-        
         self.num_timesteps = num_timesteps
+        self.neuron_type = neuron_type
         self.beta = beta
         self.in_planes = 64
-        
-        spike_grad = surrogate.fast_sigmoid(slope=25)
-        
-        # Initial convolution
-        self.conv1 = nn.Conv2d(
-            in_channels, 64, kernel_size=7,
-            stride=2, padding=3, bias=False
-        )
+
+        self.conv1 = nn.Conv2d(in_channels, 64, 7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
-        self.lif1 = snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        
-        # Residual stages
-        self.layer1 = self._make_layer(block, 64, layers[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        
-        # Global average pooling and classifier
+        self.lif1 = create_neuron(neuron_type=neuron_type, beta=beta)
+        self.maxpool = nn.MaxPool2d(3, stride=2, padding=1)
+
+        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
+        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
+        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
+        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
-        self.lif_out = snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True)
-        
-        # Initialize weights
+        self.lif_out = create_neuron(neuron_type=neuron_type, beta=beta)
+
         self._initialize_weights()
-        
-    def _make_layer(
-        self,
-        block,
-        planes: int,
-        num_blocks: int,
-        stride: int = 1,
-    ) -> nn.ModuleList:
-        """Create a stage of residual blocks."""
-        downsample = None
-        
-        if stride != 1 or self.in_planes != planes * block.expansion:
-            downsample = nn.Sequential(
-                nn.Conv2d(
-                    self.in_planes, planes * block.expansion,
-                    kernel_size=1, stride=stride, bias=False
-                ),
-                nn.BatchNorm2d(planes * block.expansion),
-            )
-        
-        layers = nn.ModuleList()
-        layers.append(block(
-            self.in_planes, planes, stride, downsample, beta=self.beta
-        ))
-        
+
+    def _make_layer(self, block, planes, num_blocks, stride):
+        layers = []
+        layers.append(block(self.in_planes, planes, stride=stride,
+                            neuron_type=self.neuron_type, beta=self.beta))
         self.in_planes = planes * block.expansion
-        
         for _ in range(1, num_blocks):
-            layers.append(block(self.in_planes, planes, beta=self.beta))
-        
-        return layers
-    
+            layers.append(block(self.in_planes, planes,
+                                neuron_type=self.neuron_type, beta=self.beta))
+        return nn.Sequential(*layers)
+
     def _initialize_weights(self):
-        """Initialize network weights."""
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -271,231 +238,127 @@ class SpikingResNet(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
-    
+
     def _reset_states(self):
-        """Reset all membrane potentials to None for new sequence."""
+        """Reset all spiking neurons."""
         for module in self.modules():
             if isinstance(module, snn.Leaky):
+                module.init_leaky()
+            elif isinstance(module, QuadraticIF):
                 module.reset_mem()
-    
-    def forward_timestep(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass for a single timestep.
-        
-        Args:
-            x: Input tensor of shape (B, C, H, W).
-            
-        Returns:
-            Output spikes of shape (B, num_classes).
-        """
-        # Initial conv
-        out = self.conv1(x)
-        out = self.bn1(out)
-        spk, _ = self.lif1(out)
-        out = self.maxpool(spk)
-        
-        # Residual stages
-        for block in self.layer1:
-            out, _, _ = block(out)
-        for block in self.layer2:
-            out, _, _ = block(out)
-        for block in self.layer3:
-            out, _, _ = block(out)
-        for block in self.layer4:
-            out, _, _ = block(out)
-        
-        # Classifier
+
+    def forward_timestep(self, x):
+        out = self.lif1(self.bn1(self.conv1(x)))
+        out = self.maxpool(out)
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
         out = self.avgpool(out)
         out = torch.flatten(out, 1)
-        out = self.fc(out)
-        spk_out, _ = self.lif_out(out)
-        
-        return spk_out
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass with temporal simulation.
-        
-        The input is presented for num_timesteps iterations,
-        and the output is the average spike rate.
-        
-        Args:
-            x: Input tensor of shape (B, C, H, W).
-            
-        Returns:
-            Output logits of shape (B, num_classes) as spike rates.
-        """
+        out = self.lif_out(self.fc(out))
+        return out
+
+    def forward(self, x):
         self._reset_states()
-        
-        # Accumulate spikes over timesteps
         spike_record = []
-        
         for t in range(self.num_timesteps):
             spk = self.forward_timestep(x)
             spike_record.append(spk)
-        
-        # Stack and compute average spike rate
-        spike_record = torch.stack(spike_record, dim=0)  # (T, B, classes)
-        output = spike_record.mean(dim=0)  # (B, classes)
-        
-        return output
-    
+        return torch.stack(spike_record, dim=0).mean(dim=0)
+
     @classmethod
-    def resnet18(cls, **kwargs) -> 'SpikingResNet':
-        """Create Spiking ResNet-18."""
+    def resnet18(cls, **kwargs):
         return cls(SpikingBasicBlock, [2, 2, 2, 2], **kwargs)
-    
+
     @classmethod
-    def resnet34(cls, **kwargs) -> 'SpikingResNet':
-        """Create Spiking ResNet-34."""
+    def resnet34(cls, **kwargs):
         return cls(SpikingBasicBlock, [3, 4, 6, 3], **kwargs)
 
 
+# ==========================================================================
+# Spiking ResNet 1D
+# ==========================================================================
+
 class SpikingResNet1D(nn.Module):
-    """
-    Spiking ResNet for 1D ECG signals (without scalogram transform).
-    
-    Processes raw 12-lead ECG signals directly using 1D convolutions
-    with spiking neurons.
-    
-    Args:
-        num_classes: Number of output classes. Default: 5.
-        in_channels: Number of ECG leads. Default: 12.
-        num_timesteps: Number of simulation timesteps. Default: 25.
-        beta: LIF neuron decay rate. Default: 0.9.
-    """
-    
-    def __init__(
-        self,
-        num_classes: int = 5,
-        in_channels: int = 12,
-        num_timesteps: int = 25,
-        beta: float = 0.9,
-    ):
+    """Spiking ResNet for 1D ECG signals."""
+
+    def __init__(self, num_classes=5, in_channels=12, num_timesteps=25,
+                 neuron_type='lif', beta=0.9):
         super().__init__()
-        
         self.num_timesteps = num_timesteps
-        spike_grad = surrogate.fast_sigmoid(slope=25)
-        
-        # Encoder
+
         self.encoder = nn.Sequential(
             nn.Conv1d(in_channels, 64, 15, stride=2, padding=7),
             nn.BatchNorm1d(64),
         )
-        self.lif_enc = snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True)
-        
-        # Residual blocks (simplified)
-        self.block1 = self._make_block(64, 128, beta, spike_grad)
-        self.block2 = self._make_block(128, 256, beta, spike_grad)
-        self.block3 = self._make_block(256, 512, beta, spike_grad)
-        
-        # Classifier
+        self.lif_enc = create_neuron(neuron_type=neuron_type, beta=beta)
+
+        self.block1 = self._make_block(64, 128, neuron_type, beta)
+        self.block2 = self._make_block(128, 256, neuron_type, beta)
+        self.block3 = self._make_block(256, 512, neuron_type, beta)
+
         self.global_pool = nn.AdaptiveAvgPool1d(1)
         self.fc = nn.Linear(512, num_classes)
-        self.lif_out = snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True)
-        
-    def _make_block(self, in_ch, out_ch, beta, spike_grad):
+        self.lif_out = create_neuron(neuron_type=neuron_type, beta=beta)
+
+    def _make_block(self, in_ch, out_ch, neuron_type, beta):
         return nn.ModuleDict({
             'conv1': nn.Conv1d(in_ch, out_ch, 7, stride=2, padding=3),
             'bn1': nn.BatchNorm1d(out_ch),
-            'lif1': snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True),
+            'lif1': create_neuron(neuron_type=neuron_type, beta=beta),
             'conv2': nn.Conv1d(out_ch, out_ch, 7, stride=1, padding=3),
             'bn2': nn.BatchNorm1d(out_ch),
-            'lif2': snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True),
+            'lif2': create_neuron(neuron_type=neuron_type, beta=beta),
             'downsample': nn.Conv1d(in_ch, out_ch, 1, stride=2),
         })
-    
+
     def _forward_block(self, x, block):
         identity = block['downsample'](x)
-        
-        out = block['conv1'](x)
-        out = block['bn1'](out)
-        spk, _ = block['lif1'](out)
-        
-        out = block['conv2'](spk)
-        out = block['bn2'](out)
+        out = block['lif1'](block['bn1'](block['conv1'](x)))
+        out = block['bn2'](block['conv2'](out))
         out = out + identity
-        spk, _ = block['lif2'](out)
-        
-        return spk
-    
+        out = block['lif2'](out)
+        return out
+
     def _reset_states(self):
         for module in self.modules():
             if isinstance(module, snn.Leaky):
+                module.init_leaky()
+            elif isinstance(module, QuadraticIF):
                 module.reset_mem()
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass for 1D ECG signals.
-        
-        Args:
-            x: Input tensor of shape (B, leads, seq_len).
-            
-        Returns:
-            Output logits of shape (B, num_classes).
-        """
+
+    def forward(self, x):
         self._reset_states()
-        
         spike_record = []
-        
         for t in range(self.num_timesteps):
-            # Encoder
-            out = self.encoder(x)
-            spk, _ = self.lif_enc(out)
-            
-            # Blocks
-            spk = self._forward_block(spk, self.block1)
-            spk = self._forward_block(spk, self.block2)
-            spk = self._forward_block(spk, self.block3)
-            
-            # Classifier
-            out = self.global_pool(spk).squeeze(-1)
-            out = self.fc(out)
-            spk_out, _ = self.lif_out(out)
-            
-            spike_record.append(spk_out)
-        
-        output = torch.stack(spike_record, dim=0).mean(dim=0)
-        return output
+            out = self.lif_enc(self.encoder(x))
+            out = self._forward_block(out, self.block1)
+            out = self._forward_block(out, self.block2)
+            out = self._forward_block(out, self.block3)
+            out = self.lif_out(self.fc(self.global_pool(out).squeeze(-1)))
+            spike_record.append(out)
+        return torch.stack(spike_record, dim=0).mean(dim=0)
 
 
-def create_spiking_resnet(
-    model_name: str = 'resnet18',
-    num_classes: int = 5,
-    num_timesteps: int = 25,
-    pretrained: bool = False,
-    **kwargs,
-) -> SpikingResNet:
-    """
-    Factory function to create Spiking ResNet models.
-    
-    Args:
-        model_name: Model variant ('resnet18', 'resnet34', '1d').
-        num_classes: Number of output classes.
-        num_timesteps: Number of simulation timesteps.
-        pretrained: Ignored (no pretrained weights available).
-        **kwargs: Additional arguments passed to model constructor.
-        
-    Returns:
-        Spiking ResNet model.
-    """
+# ==========================================================================
+# Factory
+# ==========================================================================
+
+def create_spiking_resnet(model_name='resnet18', num_classes=5, num_timesteps=25,
+                          neuron_type='lif', pretrained=False, **kwargs):
+    """Factory for Spiking ResNet models."""
     if model_name == 'resnet18':
-        return SpikingResNet.resnet18(
-            num_classes=num_classes,
-            num_timesteps=num_timesteps,
-            **kwargs
-        )
+        return SpikingResNet.resnet18(num_classes=num_classes,
+                                      num_timesteps=num_timesteps,
+                                      neuron_type=neuron_type, **kwargs)
     elif model_name == 'resnet34':
-        return SpikingResNet.resnet34(
-            num_classes=num_classes,
-            num_timesteps=num_timesteps,
-            **kwargs
-        )
+        return SpikingResNet.resnet34(num_classes=num_classes,
+                                      num_timesteps=num_timesteps,
+                                      neuron_type=neuron_type, **kwargs)
     elif model_name == '1d':
-        return SpikingResNet1D(
-            num_classes=num_classes,
-            num_timesteps=num_timesteps,
-            **kwargs
-        )
+        return SpikingResNet1D(num_classes=num_classes,
+                               num_timesteps=num_timesteps,
+                               neuron_type=neuron_type, **kwargs)
     else:
         raise ValueError(f"Unknown model: {model_name}")

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Research-Grade Training Utilities for ECG Classification.
 
 Provides a 5-fold cross-validation training loop with:
@@ -7,7 +7,7 @@ Provides a 5-fold cross-validation training loop with:
 - Enhanced checkpointing (best per fold, periodic, resume)
 - Early stopping (configurable patience & metric)
 - Full reproducibility seeding
-- Paper-ready results aggregation (mean ± std)
+- Paper-ready results aggregation (mean Â± std)
 """
 
 import os
@@ -36,6 +36,8 @@ from sklearn.metrics import (
     confusion_matrix,
     classification_report,
 )
+
+from src.evaluation.metrics import compute_all_metrics
 
 try:
     from tqdm import tqdm
@@ -381,7 +383,7 @@ class FoldTrainer:
         y_pred = np.array(all_preds)
         y_prob = np.array(all_probs)
 
-        metrics = compute_metrics(y_true, y_pred, y_prob, self.config.num_classes)
+        metrics = compute_all_metrics(y_true, y_pred, y_prob)
         metrics['val_loss'] = avg_loss
 
         return metrics
@@ -466,7 +468,7 @@ class FoldTrainer:
                 self.best_model_state = copy.deepcopy(self.model.state_dict())
                 if self.config.save_best:
                     self.save_checkpoint('best_model.pt', extra={'epoch': epoch})
-                    print(f"    ✓ Best model saved (val_{self.config.monitor_metric}: {metric_value:.4f})")
+                    print(f"    âœ“ Best model saved (val_{self.config.monitor_metric}: {metric_value:.4f})")
             else:
                 self.patience_counter += 1
 
@@ -475,7 +477,7 @@ class FoldTrainer:
                 self.save_checkpoint(f'checkpoint_epoch_{epoch+1}.pt', extra={'epoch': epoch})
 
             if self.config.early_stopping and self.patience_counter >= self.config.patience:
-                print(f"  ✗ Early stopping at epoch {epoch+1} (patience={self.config.patience})")
+                print(f"  âœ— Early stopping at epoch {epoch+1} (patience={self.config.patience})")
                 break
 
         # Restore best model
@@ -553,7 +555,7 @@ class CrossValidationRunner:
         Execute all folds and return aggregated results.
 
         Returns:
-            Dict with per-fold results and aggregated mean ± std.
+            Dict with per-fold results and aggregated mean Â± std.
         """
         seed_everything(self.config.seed)
 
@@ -637,7 +639,7 @@ class CrossValidationRunner:
         return summary
 
     def _aggregate_results(self, fold_results: List[Dict]) -> Dict[str, Dict[str, float]]:
-        """Compute mean ± std across folds for each metric."""
+        """Compute mean Â± std across folds for each metric."""
         metric_keys = ['accuracy', 'f1_macro', 'f1_weighted', 'precision', 'recall',
                         'specificity', 'sensitivity', 'auc_roc']
         agg = {}
@@ -654,7 +656,7 @@ class CrossValidationRunner:
         print("\n" + "=" * 70)
         print("  CROSS-VALIDATION RESULTS SUMMARY")
         print("=" * 70)
-        print(f"  {'Metric':<20s} {'Mean':>10s} {'± Std':>10s}  {'Per-fold values'}")
+        print(f"  {'Metric':<20s} {'Mean':>10s} {'Â± Std':>10s}  {'Per-fold values'}")
         print("  " + "-" * 66)
         for key, vals in aggregated.items():
             per_fold = ", ".join(f"{v:.4f}" for v in vals['values'])
@@ -664,3 +666,6 @@ class CrossValidationRunner:
               f"Params: {_fmt(flops_info['total_params'])}  |  "
               f"MACs: {_fmt(flops_info['macs'])}")
         print("=" * 70)
+
+
+
