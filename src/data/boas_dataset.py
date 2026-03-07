@@ -213,22 +213,28 @@ class BOASDataset(Dataset):
         return events
 
     def _parse_events_tsv(self, events_file: Path) -> List[Tuple[float, float, int]]:
-        """Parse BIDS events.tsv for sleep staging."""
+        """Parse BIDS events.tsv for sleep staging.
+
+        BOAS format: columns = onset, duration, begsample, endsample, offset, stage_hum, stage_ai
+        Stage values are integers: 0=W, 1=N1, 2=N2, 3=N3, 4=REM, negative=unknown/skip
+        """
         df = pd.read_csv(events_file, sep='\t')
         events = []
 
-        # Common BIDS column names
+        # Identify onset and duration columns
         onset_col = 'onset' if 'onset' in df.columns else df.columns[0]
         dur_col = 'duration' if 'duration' in df.columns else df.columns[1]
 
-        # Find stage column
+        # Find stage column — prefer human expert label, then AI, then generic
         stage_col = None
-        for col in ['trial_type', 'value', 'stage', 'sleep_stage', 'description']:
+        for col in ['stage_hum', 'stage_ai', 'trial_type', 'value', 'stage',
+                     'sleep_stage', 'description']:
             if col in df.columns:
                 stage_col = col
                 break
         if stage_col is None:
-            stage_col = df.columns[2] if len(df.columns) > 2 else None
+            # Last resort: use the last column
+            stage_col = df.columns[-1] if len(df.columns) > 2 else None
 
         if stage_col is None:
             return events
@@ -236,12 +242,21 @@ class BOASDataset(Dataset):
         for _, row in df.iterrows():
             onset = float(row[onset_col])
             duration = float(row[dur_col]) if pd.notna(row.get(dur_col)) else EPOCH_DURATION
-            stage_str = str(row[stage_col]).strip()
 
-            label = BIDS_SLEEP_STAGES.get(stage_str, -1)
-            if label < 0:
-                label = SLEEP_STAGES.get(stage_str, -1)
-            if label >= 0:
+            stage_val = row[stage_col]
+
+            # Handle numeric stages (BOAS format: 0=W, 1=N1, 2=N2, 3=N3, 4=REM)
+            try:
+                label = int(float(stage_val))
+            except (ValueError, TypeError):
+                # Text label — try dictionary lookups
+                stage_str = str(stage_val).strip()
+                label = BIDS_SLEEP_STAGES.get(stage_str, -1)
+                if label < 0:
+                    label = SLEEP_STAGES.get(stage_str, -1)
+
+            # Only keep valid stages (0-4), skip negatives and >4
+            if 0 <= label <= 4:
                 events.append((onset, duration, label))
 
         return events
