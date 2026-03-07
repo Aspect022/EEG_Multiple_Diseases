@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Unified ECG Classification Pipeline.
+Unified EEG Classification Pipeline.
 
 Orchestrates dataset download/verification and sequential training of all 19
-model experiments:
+model experiments on the BOAS (ds005555) sleep EEG dataset:
     - SNN ResNet-18 (LIF + QIF)
     - Spiking ViT (LIF + QIF)
     - Quantum CNN (7 rotations × 2 entanglements = 14 combos)
@@ -11,7 +11,7 @@ model experiments:
 
 Usage:
     python pipeline.py --epochs 30 --batch-size 16
-    python pipeline.py --epochs 1 --models snn_lif --skip-download
+    python pipeline.py --epochs 1 --models snn_lif_resnet --max-subjects 5
 """
 
 import os
@@ -20,10 +20,9 @@ import json
 import time
 import argparse
 import subprocess
-import hashlib
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 import torch
 import numpy as np
@@ -33,8 +32,8 @@ import numpy as np
 # Configuration
 # =========================================================================
 
-PTBXL_URL = "https://physionet.org/static/published-projects/ptb-xl/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3.zip"
-PTBXL_DIR_NAME = "ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3"
+BOAS_S3_URI = "s3://openneuro.org/ds005555"
+BOAS_DIR_NAME = "ds005555"
 
 QUANTUM_ENTANGLEMENTS = ['ring', 'full']
 QUANTUM_ROTATIONS = ['RX', 'RY', 'RZ', 'RXY', 'RXZ', 'RYZ', 'RXYZ']
@@ -81,56 +80,39 @@ for ent in QUANTUM_ENTANGLEMENTS:
 
 def download_dataset(data_dir: str, max_retries: int = 3) -> bool:
     """
-    Download and verify the PTB-XL dataset with retry logic.
+    Download BOAS ds005555 from OpenNeuro S3 with retry logic.
 
-    Args:
-        data_dir: Target directory for dataset.
-        max_retries: Maximum download attempts.
-
-    Returns:
-        True if dataset is ready.
+    Uses: aws s3 sync --no-sign-request (parallel, resumable).
     """
     data_path = Path(data_dir)
-    ptbxl_path = data_path / PTBXL_DIR_NAME
+    boas_path = data_path / BOAS_DIR_NAME
 
     for attempt in range(1, max_retries + 1):
-        # Check if already downloaded
         if verify_dataset(data_dir):
-            print(f"[Dataset] PTB-XL verified at {ptbxl_path}")
+            print(f"[Dataset] BOAS verified at {boas_path}")
             return True
 
         print(f"\n[Dataset] Download attempt {attempt}/{max_retries}...")
         data_path.mkdir(parents=True, exist_ok=True)
 
-        zip_path = data_path / "ptbxl.zip"
-
         try:
-            # Try wget first, then curl
-            try:
-                subprocess.run([
-                    'wget', '-c', '-O', str(zip_path), PTBXL_URL
-                ], check=True, timeout=3600)
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                subprocess.run([
-                    'curl', '-L', '-C', '-', '-o', str(zip_path), PTBXL_URL
-                ], check=True, timeout=3600)
+            # aws s3 sync (parallel + resumable)
+            result = subprocess.run([
+                'aws', 's3', 'sync', '--no-sign-request',
+                BOAS_S3_URI, str(boas_path),
+            ], check=True, timeout=7200)  # 2hr timeout for ~33GB
 
-            # Extract
-            print("[Dataset] Extracting...")
-            subprocess.run([
-                'unzip', '-o', '-q', str(zip_path), '-d', str(data_path)
-            ], check=True)
-
-            # Clean up zip
-            zip_path.unlink(missing_ok=True)
-
-            # Verify after extraction
             if verify_dataset(data_dir):
                 print("[Dataset] Download and verification complete!")
                 return True
             else:
-                print(f"[Dataset] Verification failed after extraction (attempt {attempt})")
+                print(f"[Dataset] Verification failed (attempt {attempt})")
 
+        except FileNotFoundError:
+            print("[Dataset] ERROR: aws CLI not found! Install: pip install awscli")
+            return False
+        except subprocess.TimeoutExpired:
+            print(f"[Dataset] Download timeout (attempt {attempt}), will retry...")
         except Exception as e:
             print(f"[Dataset] Download error: {e}")
 
@@ -140,46 +122,30 @@ def download_dataset(data_dir: str, max_retries: int = 3) -> bool:
 
 def verify_dataset(data_dir: str) -> bool:
     """
-    Verify PTB-XL dataset integrity.
+    Verify BOAS dataset integrity.
 
     Checks for:
-    - Main database CSV
-    - SCP statements CSV
-    - At least 100 .dat signal files
+    - At least 10 subject directories (sub-XXX/)
+    - At least 1 EDF file in any subject
     """
     data_path = Path(data_dir)
-    ptbxl_path = data_path / PTBXL_DIR_NAME
+    boas_path = data_path / BOAS_DIR_NAME
 
-    # Check for alternative directory names
-    if not ptbxl_path.exists():
-        # Try common alternative names
-        alternatives = [
-            "ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.1",
-            "ptb-xl-1.0.3",
-            "ptb-xl",
-        ]
-        for alt in alternatives:
-            alt_path = data_path / alt
-            if alt_path.exists():
-                ptbxl_path = alt_path
-                break
-
-    if not ptbxl_path.exists():
+    if not boas_path.exists():
         return False
 
-    # Check essential files
-    db_csv = ptbxl_path / "ptbxl_database.csv"
-    scp_csv = ptbxl_path / "scp_statements.csv"
-
-    if not db_csv.exists() or not scp_csv.exists():
+    # Check subject directories
+    subjects = [d for d in boas_path.iterdir() if d.is_dir() and d.name.startswith('sub-')]
+    if len(subjects) < 10:
         return False
 
-    # Check for signal files
-    dat_files = list(ptbxl_path.rglob("*.dat"))
-    if len(dat_files) < 100:
-        return False
+    # Check for at least one EDF file
+    for sub in subjects[:5]:
+        edf_files = list(sub.rglob("*.edf"))
+        if edf_files:
+            return True
 
-    return True
+    return False
 
 
 # =========================================================================
@@ -242,6 +208,7 @@ def run_experiment(
     batch_size: int = 16,
     num_classes: int = 5,
     learning_rate: float = 1e-3,
+    max_subjects: int = None,
 ) -> Dict[str, Any]:
     """
     Run a single training experiment.
@@ -250,9 +217,8 @@ def run_experiment(
         Dict with experiment results and metrics.
     """
     from src.data.transforms import create_scalogram_transform
-    from src.data.ptbxl_dataset import create_dataloaders
+    from src.data.boas_dataset import create_boas_dataloaders
     from src.training.research_trainer import ResearchConfig, FoldTrainer
-    from src.evaluation.metrics import compute_all_metrics, format_metrics_table
 
     exp_name = exp_config['name']
     exp_output = Path(output_dir) / exp_key
@@ -267,38 +233,26 @@ def run_experiment(
 
     try:
         # Find dataset path
-        data_path = Path(data_dir)
-        ptbxl_path = None
-        for candidate in [PTBXL_DIR_NAME] + [
-            "ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.1",
-            "ptb-xl-1.0.3", "ptb-xl",
-        ]:
-            if (data_path / candidate).exists():
-                ptbxl_path = data_path / candidate
-                break
+        boas_path = Path(data_dir) / BOAS_DIR_NAME
+        if not boas_path.exists():
+            raise FileNotFoundError(f"BOAS dataset not found at {boas_path}")
 
-        if ptbxl_path is None:
-            raise FileNotFoundError(f"PTB-XL not found in {data_dir}")
-
-        # Create data transform
+        # Create CWT transform (converts 1D EEG epochs → 2D scalograms)
         transform = create_scalogram_transform(
             output_size=(224, 224), sampling_rate=100
         )
 
         # Create data loaders
-        train_loader, val_loader, test_loader = create_dataloaders(
-            data_dir=str(ptbxl_path),
+        train_loader, val_loader, test_loader = create_boas_dataloaders(
+            data_dir=str(boas_path),
             batch_size=batch_size,
-            sampling_rate=100,
             transform=transform,
             num_workers=4,
+            max_subjects=max_subjects,
         )
 
         # Create model
         model = create_model(exp_config, num_classes=num_classes)
-
-        # Determine if SNN (for special loss handling)
-        is_snn = exp_config['type'] in ('snn', 'snn_vit')
 
         # Training config
         config = ResearchConfig(
@@ -316,7 +270,7 @@ def run_experiment(
             seed=42,
         )
 
-        # Train (single fold for speed; full CV available via CrossValidationRunner)
+        # Train (single fold for speed)
         trainer = FoldTrainer(
             model=model,
             config=config,
@@ -384,8 +338,9 @@ def generate_summary(results: List[Dict], output_dir: str):
 
     # Markdown summary
     lines = [
-        "# ECG Classification Pipeline — Results Summary",
+        "# EEG Sleep Staging Pipeline — Results Summary",
         f"\n**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"**Dataset**: BOAS (ds005555) — 5-class Sleep Staging (W/N1/N2/N3/REM)",
         f"**Total experiments**: {len(results)}",
         "",
         "## Results Table",
@@ -419,7 +374,7 @@ def generate_summary(results: List[Dict], output_dir: str):
 # =========================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="ECG Classification Pipeline")
+    parser = argparse.ArgumentParser(description="EEG Sleep Staging Pipeline")
     parser.add_argument('--epochs', type=int, default=30, help='Training epochs')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
@@ -428,28 +383,30 @@ def main():
     parser.add_argument('--skip-download', action='store_true', help='Skip dataset download')
     parser.add_argument('--models', type=str, default='all',
                         help='Comma-separated model keys or "all". E.g. snn_lif_resnet,swin')
-    parser.add_argument('--dataset', type=str, default='ptbxl',
-                        choices=['ptbxl', 'boas'], help='Dataset to use')
+    parser.add_argument('--max-subjects', type=int, default=None,
+                        help='Limit subjects per split (for quick testing)')
     args = parser.parse_args()
 
     print("=" * 70)
-    print("  ECG CLASSIFICATION PIPELINE")
-    print("  Advanced ML: SNN (LIF/QIF) × ResNet/ViT + Quantum (14 combos) + Swin")
+    print("  EEG SLEEP STAGING PIPELINE")
+    print("  Dataset: BOAS ds005555 (W/N1/N2/N3/REM)")
+    print("  Models: SNN (LIF/QIF) × ResNet/ViT + Quantum (14 combos) + Swin")
     print("=" * 70)
-    print(f"  Epochs:     {args.epochs}")
-    print(f"  Batch Size: {args.batch_size}")
-    print(f"  LR:         {args.lr}")
-    print(f"  Data Dir:   {args.data_dir}")
-    print(f"  Output Dir: {args.output_dir}")
-    print(f"  Device:     {'CUDA' if torch.cuda.is_available() else 'CPU'}")
+    print(f"  Epochs:       {args.epochs}")
+    print(f"  Batch Size:   {args.batch_size}")
+    print(f"  LR:           {args.lr}")
+    print(f"  Data Dir:     {args.data_dir}")
+    print(f"  Output Dir:   {args.output_dir}")
+    print(f"  Max Subjects: {args.max_subjects or 'all'}")
+    print(f"  Device:       {'CUDA' if torch.cuda.is_available() else 'CPU'}")
     if torch.cuda.is_available():
-        print(f"  GPU:        {torch.cuda.get_device_name(0)}")
-        print(f"  VRAM:       {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB")
+        print(f"  GPU:          {torch.cuda.get_device_name(0)}")
+        print(f"  VRAM:         {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB")
     print("=" * 70)
 
     # Step 1: Dataset
     if not args.skip_download:
-        print("\n[Step 1/3] Downloading and verifying dataset...")
+        print("\n[Step 1/3] Downloading and verifying BOAS dataset...")
         if not download_dataset(args.data_dir):
             print("FATAL: Could not prepare dataset. Exiting.")
             sys.exit(1)
@@ -484,6 +441,7 @@ def main():
             epochs=args.epochs,
             batch_size=args.batch_size,
             learning_rate=args.lr,
+            max_subjects=args.max_subjects,
         )
         all_results.append(result)
 

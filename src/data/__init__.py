@@ -1,10 +1,14 @@
-"""Data loading and preprocessing utilities for ECG classification."""
+"""Data loading and preprocessing utilities for EEG classification."""
 
-from .ptbxl_dataset import (
-    PTBXL_Dataset,
-    DIAGNOSTIC_CLASSES,
+from .boas_dataset import (
+    BOASDataset,
+    BIDS_SLEEP_STAGES,
     CLASS_NAMES,
-    create_dataloaders,
+    create_boas_dataloaders,
+)
+from .sleep_edf_dataset import (
+    SleepEDFDataset,
+    create_sleep_edf_dataloaders,
 )
 from .transforms import (
     WaveletTransform,
@@ -15,10 +19,12 @@ from .transforms import (
 )
 
 __all__ = [
-    'PTBXL_Dataset',
-    'DIAGNOSTIC_CLASSES',
+    'BOASDataset',
+    'BIDS_SLEEP_STAGES',
     'CLASS_NAMES',
-    'create_dataloaders',
+    'create_boas_dataloaders',
+    'SleepEDFDataset',
+    'create_sleep_edf_dataloaders',
     'WaveletTransform',
     'BandpassFilter',
     'Normalize',

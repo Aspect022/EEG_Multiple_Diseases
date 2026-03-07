@@ -1,8 +1,8 @@
 """
-ECG Signal Transforms for Deep Learning.
+Signal Transforms for Deep Learning.
 
-This module provides transforms to convert 1D ECG signals to 2D representations
-suitable for vision models (CNNs, Vision Transformers, etc.).
+This module provides transforms to convert 1D physiological signals (EEG/ECG)
+to 2D representations suitable for vision models (CNNs, Vision Transformers, etc.).
 """
 
 import numpy as np
@@ -14,7 +14,7 @@ import warnings
 
 class WaveletTransform:
     """
-    Convert 1D ECG signals to 2D scalograms using Continuous Wavelet Transform.
+    Convert 1D signals (EEG/ECG) to 2D scalograms using Continuous Wavelet Transform.
     
     Uses the Morlet wavelet to create time-frequency representations that
     can be fed to vision models like CNNs or Vision Transformers.
@@ -32,8 +32,8 @@ class WaveletTransform:
     
     Example:
         >>> transform = WaveletTransform(output_size=(224, 224))
-        >>> ecg = torch.randn(12, 1000)  # 12-lead, 1000 samples
-        >>> scalogram = transform(ecg)   # (3, 224, 224)
+        >>> signal = torch.randn(6, 3000)  # 6-ch EEG, 30s at 100Hz
+        >>> scalogram = transform(signal)  # (3, 224, 224)
     """
     
     def __init__(
@@ -178,10 +178,10 @@ class WaveletTransform:
     
     def __call__(self, ecg: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
         """
-        Transform ECG signal(s) to scalogram(s).
+        Transform signal(s) to scalogram(s).
         
         Args:
-            ecg: ECG signal of shape (num_leads, seq_len) or (seq_len,).
+            ecg: Signal of shape (num_channels, seq_len) or (seq_len,).
             
         Returns:
             Scalogram tensor of shape (C, H, W) where C is 1 or 3.
@@ -260,7 +260,7 @@ class WaveletTransform:
 
 class BandpassFilter:
     """
-    Apply bandpass filtering to ECG signals.
+    Apply bandpass filtering to physiological signals.
     
     Args:
         low_freq: Low cutoff frequency in Hz. Default: 0.5.
@@ -282,7 +282,7 @@ class BandpassFilter:
         self.order = order
         
     def __call__(self, ecg: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
-        """Apply bandpass filter to ECG signal."""
+        """Apply bandpass filter to signal."""
         from scipy.signal import butter, filtfilt
         
         # Convert to numpy
@@ -313,7 +313,7 @@ class BandpassFilter:
 
 class Normalize:
     """
-    Normalize ECG signals.
+    Normalize physiological signals.
     
     Args:
         method: Normalization method ('zscore', 'minmax', 'robust').
@@ -329,7 +329,7 @@ class Normalize:
         self.per_lead = per_lead
         
     def __call__(self, ecg: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
-        """Normalize ECG signal."""
+        """Normalize signal."""
         is_tensor = isinstance(ecg, torch.Tensor)
         if is_tensor:
             ecg = ecg.numpy()
@@ -394,7 +394,7 @@ def create_scalogram_transform(
     
     Args:
         output_size: Target image size.
-        sampling_rate: ECG sampling rate.
+        sampling_rate: Signal sampling rate (Hz).
         apply_filter: Whether to apply bandpass filtering.
         
     Returns:

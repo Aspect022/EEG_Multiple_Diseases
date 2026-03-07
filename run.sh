@@ -1,10 +1,10 @@
 #!/bin/bash
 # ==========================================================================
-# ECG Classification Pipeline — Automated Server Deployment Script
+# EEG Sleep Staging Pipeline — Automated Server Deployment Script
 # ==========================================================================
 #
 # This script fully automates the research pipeline on a GPU server:
-#   1. Downloads and verifies the PTB-XL dataset (with retry loop)
+#   1. Installs awscli and downloads BOAS ds005555 from OpenNeuro S3
 #   2. Creates a Python virtual environment
 #   3. Installs all dependencies (including GPU-accelerated PennyLane)
 #   4. Runs all 19 experiments sequentially
@@ -14,6 +14,7 @@
 #   bash run.sh                     # Full run (30 epochs)
 #   bash run.sh --epochs 5          # Quick test run
 #   bash run.sh --models snn_lif_resnet,swin  # Specific models only
+#   bash run.sh --max-subjects 5    # Quick test with 5 subjects per split
 #
 # ==========================================================================
 
@@ -28,6 +29,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-outputs/results}"
 VENV_DIR="${VENV_DIR:-venv}"
 PYTHON="${PYTHON:-python3}"
 MODELS="${MODELS:-all}"
+MAX_SUBJECTS="${MAX_SUBJECTS:-}"
 
 # Parse CLI args (override defaults)
 while [[ $# -gt 0 ]]; do
@@ -38,56 +40,65 @@ while [[ $# -gt 0 ]]; do
         --data-dir) DATA_DIR="$2"; shift 2 ;;
         --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
         --models) MODELS="$2"; shift 2 ;;
+        --max-subjects) MAX_SUBJECTS="$2"; shift 2 ;;
         *) echo "Unknown arg: $1"; shift ;;
     esac
 done
 
 echo "======================================================================"
-echo "  ECG CLASSIFICATION PIPELINE — AUTOMATED SERVER RUN"
+echo "  EEG SLEEP STAGING PIPELINE — AUTOMATED SERVER RUN"
+echo "  Dataset: BOAS ds005555 (W/N1/N2/N3/REM)"
 echo "======================================================================"
-echo "  Epochs:     $EPOCHS"
-echo "  Batch Size: $BATCH_SIZE"
-echo "  LR:         $LR"
-echo "  Data Dir:   $DATA_DIR"
-echo "  Output Dir: $OUTPUT_DIR"
-echo "  Models:     $MODELS"
-echo "  Started:    $(date)"
+echo "  Epochs:       $EPOCHS"
+echo "  Batch Size:   $BATCH_SIZE"
+echo "  LR:           $LR"
+echo "  Data Dir:     $DATA_DIR"
+echo "  Output Dir:   $OUTPUT_DIR"
+echo "  Models:       $MODELS"
+echo "  Max Subjects: ${MAX_SUBJECTS:-all}"
+echo "  Started:      $(date)"
 echo "======================================================================"
 
 
 # ==========================================================================
-# Step 1: Dataset Download + Verification Loop
+# Step 1: Dataset Download via AWS S3
 # ==========================================================================
 
 echo ""
-echo "[STEP 1/5] Dataset Download & Verification"
-echo "--------------------------------------------"
+echo "[STEP 1/5] BOAS Dataset Download from OpenNeuro S3"
+echo "---------------------------------------------------"
 
-PTBXL_URL="https://physionet.org/static/published-projects/ptb-xl/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3.zip"
-PTBXL_ZIP="$DATA_DIR/ptbxl.zip"
+BOAS_S3="s3://openneuro.org/ds005555"
+BOAS_LOCAL="$DATA_DIR/ds005555"
 
-# Possible directory names after extraction
-PTBXL_DIRS=(
-    "ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3"
-    "ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.1"
-    "ptb-xl-1.0.3"
-    "ptb-xl"
-)
+# Install awscli if not available
+if ! command -v aws &> /dev/null; then
+    echo "  [INSTALL] Installing awscli..."
+    pip install awscli --quiet
+fi
 
+# Verify AWS CLI is now available
+if ! command -v aws &> /dev/null; then
+    echo "  ERROR: awscli installation failed!"
+    exit 1
+fi
+echo "  [OK] awscli: $(aws --version 2>&1 | head -1)"
+
+# Download with S3 sync (parallel, resumable, no auth needed)
 verify_dataset() {
-    for dir_name in "${PTBXL_DIRS[@]}"; do
-        local check_path="$DATA_DIR/$dir_name"
-        if [ -d "$check_path" ] && \
-           [ -f "$check_path/ptbxl_database.csv" ] && \
-           [ -f "$check_path/scp_statements.csv" ]; then
-            local dat_count
-            dat_count=$(find "$check_path" -name "*.dat" 2>/dev/null | wc -l)
-            if [ "$dat_count" -ge 100 ]; then
-                echo "  [OK] Dataset verified: $check_path ($dat_count signal files)"
-                return 0
-            fi
+    if [ ! -d "$BOAS_LOCAL" ]; then
+        return 1
+    fi
+    local sub_count
+    sub_count=$(find "$BOAS_LOCAL" -maxdepth 1 -type d -name "sub-*" 2>/dev/null | wc -l)
+    if [ "$sub_count" -ge 10 ]; then
+        local edf_count
+        edf_count=$(find "$BOAS_LOCAL" -name "*.edf" 2>/dev/null | head -5 | wc -l)
+        if [ "$edf_count" -ge 1 ]; then
+            echo "  [OK] Dataset verified: $sub_count subjects, EDF files present"
+            return 0
         fi
-    done
+    fi
     return 1
 }
 
@@ -101,37 +112,20 @@ while [ $attempt -le $MAX_RETRIES ]; do
         break
     fi
 
-    echo "  [DOWNLOAD] Attempt $attempt/$MAX_RETRIES..."
+    echo "  [DOWNLOAD] Attempt $attempt/$MAX_RETRIES — aws s3 sync from OpenNeuro..."
+    aws s3 sync --no-sign-request "$BOAS_S3" "$BOAS_LOCAL" || true
 
-    # Download with resume support
-    if command -v wget &> /dev/null; then
-        wget -c -O "$PTBXL_ZIP" "$PTBXL_URL" || true
-    elif command -v curl &> /dev/null; then
-        curl -L -C - -o "$PTBXL_ZIP" "$PTBXL_URL" || true
-    else
-        echo "  ERROR: Neither wget nor curl found!"
-        exit 1
-    fi
-
-    # Extract
-    if [ -f "$PTBXL_ZIP" ]; then
-        echo "  [EXTRACT] Unzipping..."
-        unzip -o -q "$PTBXL_ZIP" -d "$DATA_DIR" || true
-        rm -f "$PTBXL_ZIP"
-    fi
-
-    # Verify
     if verify_dataset; then
-        echo "  [OK] Download and verification successful!"
+        echo "  [OK] Download complete!"
         break
     else
-        echo "  [FAIL] Verification failed, retrying..."
+        echo "  [RETRY] Verification failed, retrying..."
         attempt=$((attempt + 1))
     fi
 done
 
 if ! verify_dataset; then
-    echo "  FATAL: Could not download/verify dataset after $MAX_RETRIES attempts!"
+    echo "  FATAL: Could not download/verify BOAS dataset after $MAX_RETRIES attempts!"
     exit 1
 fi
 
@@ -178,9 +172,9 @@ fi
 # Install project requirements
 pip install -r requirements.txt
 
-# Verify GPU
+# Verify GPU + dependencies
 echo ""
-echo "  GPU Check:"
+echo "  System Check:"
 python -c "
 import torch
 print(f'    PyTorch: {torch.__version__}')
@@ -188,6 +182,12 @@ print(f'    CUDA available: {torch.cuda.is_available()}')
 if torch.cuda.is_available():
     print(f'    GPU: {torch.cuda.get_device_name(0)}')
     print(f'    VRAM: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB')
+
+try:
+    import mne
+    print(f'    MNE: {mne.__version__}')
+except:
+    print('    MNE: NOT INSTALLED')
 
 try:
     import pennylane as qml
@@ -212,16 +212,16 @@ except:
 # ==========================================================================
 
 echo ""
-echo "[STEP 4/5] Running Training Pipeline"
-echo "--------------------------------------"
+echo "[STEP 4/5] Running EEG Training Pipeline"
+echo "------------------------------------------"
 
-python pipeline.py \
-    --epochs "$EPOCHS" \
-    --batch-size "$BATCH_SIZE" \
-    --lr "$LR" \
-    --data-dir "$DATA_DIR" \
-    --output-dir "$OUTPUT_DIR" \
-    --models "$MODELS"
+PIPELINE_ARGS="--epochs $EPOCHS --batch-size $BATCH_SIZE --lr $LR --data-dir $DATA_DIR --output-dir $OUTPUT_DIR --models $MODELS"
+
+if [ -n "$MAX_SUBJECTS" ]; then
+    PIPELINE_ARGS="$PIPELINE_ARGS --max-subjects $MAX_SUBJECTS"
+fi
+
+python pipeline.py $PIPELINE_ARGS
 
 
 # ==========================================================================
@@ -232,11 +232,14 @@ echo ""
 echo "[STEP 5/5] Pushing Results to GitHub"
 echo "--------------------------------------"
 
-# Add all results
+# Add all results (but not the huge dataset)
+echo "ds005555/" >> .gitignore 2>/dev/null || true
+echo "data/" >> .gitignore 2>/dev/null || true
+
 git add -A
 
 # Commit with timestamp
-COMMIT_MSG="Server run results — $(date '+%Y-%m-%d %H:%M:%S') — ${EPOCHS} epochs"
+COMMIT_MSG="EEG results — $(date '+%Y-%m-%d %H:%M:%S') — ${EPOCHS} epochs — BOAS ds005555"
 git commit -m "$COMMIT_MSG" || echo "  Nothing to commit."
 
 # Push
