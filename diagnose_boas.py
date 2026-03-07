@@ -1,96 +1,104 @@
 #!/usr/bin/env python3
 """
-Diagnostic script to inspect BOAS dataset structure.
-Run on server: python diagnose_boas.py data/ds005555
+Deep diagnostic — traces EXACTLY why subjects fail.
+Run: python diagnose_boas.py data/ds005555
 """
-import sys
-import os
+import sys, os, re
 from pathlib import Path
+import pandas as pd
 
-data_dir = sys.argv[1] if len(sys.argv) > 1 else "data/ds005555"
-data_path = Path(data_dir)
+data_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "data/ds005555")
 
-print(f"=== BOAS Dataset Diagnostic ===")
-print(f"Path: {data_path}")
-print(f"Exists: {data_path.exists()}")
-
-# 1. Show top-level structure
-print(f"\n--- Top-level dirs (first 5) ---")
-subjects = sorted([d.name for d in data_path.iterdir() if d.is_dir() and d.name.startswith('sub-')])
+# Discover subjects
+subjects = sorted([d.name for d in data_dir.iterdir() if d.is_dir() and d.name.startswith('sub-')])
 print(f"Total subjects: {len(subjects)}")
-for s in subjects[:5]:
-    print(f"  {s}/")
 
-# 2. Deep-dive into first subject
-if subjects:
-    sub = subjects[0]
-    sub_dir = data_path / sub
-    print(f"\n--- Full tree of {sub}/ ---")
-    for root, dirs, files in os.walk(sub_dir):
-        level = root.replace(str(sub_dir), '').count(os.sep)
-        indent = '  ' * level
-        print(f"{indent}{os.path.basename(root)}/")
-        for f in sorted(files):
-            print(f"{indent}  {f}")
+has_psg_edf = 0
+has_headband_edf = 0
+has_psg_events = 0
+has_headband_events = 0
+has_stage_hum = 0
+has_stage_ai_only = 0
+no_edf = 0
+no_events = 0
+valid_epochs_count = 0
+subjects_with_data = 0
 
-    # 3. Find and inspect EDF files
-    edf_files = list(sub_dir.rglob("*.edf"))
-    print(f"\n--- EDF files in {sub} ---")
-    for ef in edf_files:
-        print(f"  {ef.relative_to(data_path)}")
+for sub in subjects:
+    sub_dir = data_dir / sub
+    
+    # Find EDF files
+    psg_edfs = list(sub_dir.rglob('*psg*eeg*.edf'))
+    hb_edfs = list(sub_dir.rglob('*headband*eeg*.edf'))
+    all_edfs = list(sub_dir.rglob('*.edf'))
+    
+    if psg_edfs:
+        has_psg_edf += 1
+        edf_file = psg_edfs[0]
+    elif all_edfs:
+        # Pick non-headband, else headband
+        non_hb = [f for f in all_edfs if 'headband' not in f.name.lower()]
+        edf_file = non_hb[0] if non_hb else all_edfs[0]
+        if hb_edfs:
+            has_headband_edf += 1
+    else:
+        no_edf += 1
+        print(f"  {sub}: NO EDF FILES AT ALL")
+        continue
+    
+    # Find matching events.tsv
+    events_name = re.sub(r'_eeg\.edf$', '_events.tsv', edf_file.name, flags=re.IGNORECASE)
+    events_file = edf_file.parent / events_name
+    
+    if not events_file.exists():
+        # Try broader search
+        tsv_files = list(edf_file.parent.glob('*events*.tsv'))
+        if tsv_files:
+            events_file = tsv_files[0]
+        else:
+            no_events += 1
+            print(f"  {sub}: EDF={edf_file.name} but NO EVENTS TSV (looked for {events_name})")
+            # List what files DO exist
+            all_files = [f.name for f in edf_file.parent.iterdir()]
+            print(f"         Files: {all_files}")
+            continue
+    
+    # Parse events
+    try:
+        df = pd.read_csv(events_file, sep='\t')
+        cols = list(df.columns)
+        
+        # Check for stage columns
+        if 'stage_hum' in cols:
+            has_stage_hum += 1
+            stage_col = 'stage_hum'
+        elif 'stage_ai' in cols:
+            has_stage_ai_only += 1
+            stage_col = 'stage_ai'
+        else:
+            print(f"  {sub}: events has NO stage column! Columns: {cols}")
+            continue
+        
+        # Count valid stages
+        stages = df[stage_col].values
+        valid = [(int(float(s))) for s in stages if 0 <= int(float(s)) <= 4]
+        
+        if valid:
+            subjects_with_data += 1
+            valid_epochs_count += len(valid)
+        else:
+            print(f"  {sub}: events found but ALL stages invalid. Unique values: {sorted(set(stages))}")
+    
+    except Exception as e:
+        print(f"  {sub}: ERROR parsing {events_file.name}: {e}")
 
-    # 4. Find and inspect events TSV files
-    tsv_files = list(sub_dir.rglob("*events*"))
-    print(f"\n--- Events files in {sub} ---")
-    for tf in tsv_files:
-        print(f"  {tf.relative_to(data_path)}")
-        if tf.suffix == '.tsv':
-            print(f"  Contents (first 10 rows):")
-            with open(tf) as f:
-                for i, line in enumerate(f):
-                    if i < 10:
-                        print(f"    {line.rstrip()}")
-                    else:
-                        break
-            # Count total rows
-            with open(tf) as f:
-                total = sum(1 for _ in f) - 1  # minus header
-            print(f"  Total rows: {total}")
-
-    # 5. Load first EDF with MNE and check channels + annotations
-    if edf_files:
-        # Pick the PSG file if available
-        psg_files = [f for f in edf_files if 'headband' not in f.name.lower()]
-        target = psg_files[0] if psg_files else edf_files[0]
-
-        print(f"\n--- MNE inspection of {target.name} ---")
-        try:
-            import mne
-            mne.set_log_level('ERROR')
-            raw = mne.io.read_raw_edf(str(target), preload=False, verbose=False)
-            print(f"  Channels ({len(raw.ch_names)}): {raw.ch_names}")
-            print(f"  Sampling rate: {raw.info['sfreq']} Hz")
-            print(f"  Duration: {raw.times[-1]:.1f} seconds")
-
-            # Check annotations
-            annots = raw.annotations
-            print(f"\n  Annotations count: {len(annots)}")
-            if len(annots) > 0:
-                # Show unique descriptions
-                descs = [a['description'] for a in annots]
-                unique_descs = sorted(set(descs))
-                print(f"  Unique annotation labels ({len(unique_descs)}):")
-                for d in unique_descs:
-                    count = descs.count(d)
-                    print(f"    '{d}' -> {count} occurrences")
-
-                # Show first 5 annotations
-                print(f"\n  First 5 annotations:")
-                for i, a in enumerate(annots):
-                    if i >= 5:
-                        break
-                    print(f"    onset={a['onset']:.1f}s, dur={a['duration']:.1f}s, desc='{a['description']}'")
-        except Exception as e:
-            print(f"  MNE Error: {e}")
-
-print("\n=== Done ===")
+print(f"\n=== SUMMARY ===")
+print(f"Subjects total:       {len(subjects)}")
+print(f"With PSG EDF:         {has_psg_edf}")
+print(f"With headband only:   {has_headband_edf}")
+print(f"No EDF at all:        {no_edf}")
+print(f"No events TSV:        {no_events}")
+print(f"Has stage_hum col:    {has_stage_hum}")
+print(f"Has stage_ai only:    {has_stage_ai_only}")
+print(f"Subjects with data:   {subjects_with_data}")
+print(f"Total valid epochs:   {valid_epochs_count}")
