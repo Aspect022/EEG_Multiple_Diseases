@@ -221,6 +221,7 @@ if [ -n "$MAX_SUBJECTS" ]; then
     PIPELINE_ARGS="$PIPELINE_ARGS --max-subjects $MAX_SUBJECTS"
 fi
 
+export PYTHONWARNINGS="ignore::RuntimeWarning"
 python pipeline.py $PIPELINE_ARGS
 
 
