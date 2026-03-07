@@ -446,8 +446,8 @@ class FoldTrainer:
             self.history['val_acc'].append(val_acc)
             self.history['val_f1'].append(val_f1)
             self.history['val_auc'].append(val_auc)
-            self.history['val_precision'].append(val_metrics['precision'])
-            self.history['val_recall'].append(val_metrics['recall'])
+            self.history['val_precision'].append(val_metrics.get('precision_macro', val_metrics.get('precision', 0.0)))
+            self.history['val_recall'].append(val_metrics.get('recall_macro', val_metrics.get('recall', 0.0)))
             self.history['val_specificity'].append(val_metrics.get('specificity', 0.0))
             self.history['val_sensitivity'].append(val_metrics.get('sensitivity', 0.0))
             self.history['lr'].append(lr)
@@ -640,7 +640,7 @@ class CrossValidationRunner:
 
     def _aggregate_results(self, fold_results: List[Dict]) -> Dict[str, Dict[str, float]]:
         """Compute mean Â± std across folds for each metric."""
-        metric_keys = ['accuracy', 'f1_macro', 'f1_weighted', 'precision', 'recall',
+        metric_keys = ['accuracy', 'f1_macro', 'f1_weighted', 'precision_macro', 'recall_macro',
                         'specificity', 'sensitivity', 'auc_roc']
         agg = {}
         for key in metric_keys:
