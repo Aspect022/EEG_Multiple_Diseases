@@ -325,6 +325,12 @@ class BOASDataset(Dataset):
                 else:
                     stage_events = self._parse_annotations_from_raw(raw)
 
+                # Debug: show exactly what happened (first 3 subjects only)
+                if loaded_count < 3 or not stage_events:
+                    print(f"  [DEBUG] {sub}: edf={eeg_file.name}, "
+                          f"events={'FOUND: ' + events_file.name if events_file else 'NONE'}, "
+                          f"parsed={len(stage_events)} events")
+
                 if not stage_events:
                     print(f"  [BOAS] Skipping {sub}: no sleep staging annotations found")
                     continue
