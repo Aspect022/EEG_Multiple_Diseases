@@ -17,7 +17,7 @@ import re
 import warnings
 
 # Suppress noisy MNE warnings about mixed channel filters and undefined physical ranges
-warnings.filterwarnings('ignore', category=RuntimeWarning, module='mne')
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 from pathlib import Path
 from typing import Optional, Callable, Tuple, List, Dict
 
@@ -28,7 +28,7 @@ from torch.utils.data import Dataset, DataLoader
 
 try:
     import mne
-    mne.set_log_level('WARNING')
+    mne.set_log_level('ERROR')
 except ImportError:
     raise ImportError("MNE is required for BOAS loader. Install: pip install mne")
 
@@ -297,8 +297,10 @@ class BOASDataset(Dataset):
                 continue
 
             try:
-                # Load raw EEG
-                raw = mne.io.read_raw_edf(str(eeg_file), preload=True, verbose=False)
+                # Load raw EEG (suppress MNE channel filter warnings)
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore', RuntimeWarning)
+                    raw = mne.io.read_raw_edf(str(eeg_file), preload=True, verbose=False)
 
                 # Match channels
                 matched_chs = self._match_channels(raw)
