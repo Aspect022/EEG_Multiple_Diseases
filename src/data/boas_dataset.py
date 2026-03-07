@@ -14,6 +14,10 @@ Download:
 
 import os
 import re
+import warnings
+
+# Suppress noisy MNE warnings about mixed channel filters and undefined physical ranges
+warnings.filterwarnings('ignore', category=RuntimeWarning, module='mne')
 from pathlib import Path
 from typing import Optional, Callable, Tuple, List, Dict
 
