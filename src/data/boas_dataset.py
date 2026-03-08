@@ -24,6 +24,7 @@ from typing import Optional, Callable, Tuple, List, Dict
 import numpy as np
 import pandas as pd
 import torch
+import time
 from torch.utils.data import Dataset, DataLoader
 
 try:
@@ -433,3 +434,108 @@ def create_boas_dataloaders(
     print(f"\n  Train: {len(train_ds)} epochs | Val: {len(val_ds)} | Test: {len(test_ds)}")
 
     return train_loader, val_loader, test_loader
+
+
+# ---------------------------------------------------------------------------
+# Cached (Precomputed) Dataset — Zero CWT cost
+# ---------------------------------------------------------------------------
+
+class CachedScalogramDataset(Dataset):
+    """
+    Dataset backed by precomputed scalogram tensors in RAM.
+
+    Loads .pt files produced by precompute_scalograms.py.
+    Per-sample cost: ~0.001ms (memory read only).
+    """
+
+    def __init__(self, data_tensor: torch.Tensor, label_tensor: torch.Tensor):
+        self.data = data_tensor    # (N, 3, 224, 224) float16
+        self.labels = label_tensor  # (N,)
+        self.num_classes = NUM_CLASSES
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
+        return self.data[idx].float(), int(self.labels[idx])
+
+    def get_class_distribution(self) -> Dict[str, int]:
+        if len(self.labels) == 0:
+            return {}
+        unique, counts = np.unique(self.labels.numpy(), return_counts=True)
+        return {CLASS_NAMES[int(u)]: int(c) for u, c in zip(unique, counts)}
+
+
+def create_cached_dataloaders(
+    cache_dir: str,
+    batch_size: int = 128,
+    fallback_data_dir: Optional[str] = None,
+    fallback_transform: Optional[Callable] = None,
+    fallback_max_subjects: Optional[int] = None,
+) -> Tuple[DataLoader, DataLoader, DataLoader]:
+    """
+    Create DataLoaders from precomputed scalogram cache.
+
+    If cache not found and fallback_data_dir is provided, falls back to
+    on-the-fly CWT (slow path).
+
+    Args:
+        cache_dir: Path to ds005555_cache/ with .pt files.
+        batch_size: Batch size (use 128+ for cached data).
+        fallback_data_dir: If cache missing, fall back to raw BOAS loader.
+        fallback_transform: Transform for fallback path.
+        fallback_max_subjects: Max subjects for fallback path.
+    """
+    cache_path = Path(cache_dir)
+
+    # Check if cache exists
+    if (cache_path / 'train_data.pt').exists():
+        print(f"\n  [CACHE] Loading precomputed scalograms from {cache_path}")
+        t0 = time.time()
+
+        train_data = torch.load(cache_path / 'train_data.pt', weights_only=True)
+        train_labels = torch.load(cache_path / 'train_labels.pt', weights_only=True)
+        val_data = torch.load(cache_path / 'val_data.pt', weights_only=True)
+        val_labels = torch.load(cache_path / 'val_labels.pt', weights_only=True)
+        test_data = torch.load(cache_path / 'test_data.pt', weights_only=True)
+        test_labels = torch.load(cache_path / 'test_labels.pt', weights_only=True)
+
+        elapsed = time.time() - t0
+        print(f"  [CACHE] Loaded in {elapsed:.1f}s")
+        print(f"  [CACHE] Train: {len(train_labels)} | Val: {len(val_labels)} | Test: {len(test_labels)}")
+        mem_gb = (train_data.element_size() * train_data.nelement() +
+                  val_data.element_size() * val_data.nelement() +
+                  test_data.element_size() * test_data.nelement()) / 1e9
+        print(f"  [CACHE] RAM usage: {mem_gb:.1f} GB")
+
+        train_ds = CachedScalogramDataset(train_data, train_labels)
+        val_ds = CachedScalogramDataset(val_data, val_labels)
+        test_ds = CachedScalogramDataset(test_data, test_labels)
+
+        # For cached data: num_workers=0 (data already in RAM), pin_memory=True
+        pin = torch.cuda.is_available()
+        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                                  num_workers=0, pin_memory=pin)
+        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
+                                num_workers=0, pin_memory=pin)
+        test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False,
+                                 num_workers=0, pin_memory=pin)
+
+        print(f"\n  Train: {len(train_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
+        return train_loader, val_loader, test_loader
+
+    else:
+        print(f"\n  [CACHE] No cache found at {cache_path}")
+        if fallback_data_dir:
+            print(f"  [CACHE] Falling back to on-the-fly CWT (slow path)")
+            return create_boas_dataloaders(
+                data_dir=fallback_data_dir,
+                batch_size=batch_size,
+                transform=fallback_transform,
+                max_subjects=fallback_max_subjects,
+            )
+        else:
+            raise FileNotFoundError(
+                f"Scalogram cache not found at {cache_path}. "
+                f"Run: python precompute_scalograms.py --data-dir <boas_path>"
+            )

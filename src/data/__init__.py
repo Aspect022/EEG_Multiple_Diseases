@@ -5,6 +5,8 @@ from .boas_dataset import (
     BIDS_SLEEP_STAGES,
     CLASS_NAMES,
     create_boas_dataloaders,
+    CachedScalogramDataset,
+    create_cached_dataloaders,
 )
 from .sleep_edf_dataset import (
     SleepEDFDataset,
@@ -23,6 +25,8 @@ __all__ = [
     'BIDS_SLEEP_STAGES',
     'CLASS_NAMES',
     'create_boas_dataloaders',
+    'CachedScalogramDataset',
+    'create_cached_dataloaders',
     'SleepEDFDataset',
     'create_sleep_edf_dataloaders',
     'WaveletTransform',

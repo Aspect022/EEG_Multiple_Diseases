@@ -205,7 +205,7 @@ def run_experiment(
     data_dir: str,
     output_dir: str,
     epochs: int = 30,
-    batch_size: int = 16,
+    batch_size: int = 128,
     num_classes: int = 5,
     learning_rate: float = 1e-3,
     max_subjects: int = None,
@@ -216,8 +216,6 @@ def run_experiment(
     Returns:
         Dict with experiment results and metrics.
     """
-    from src.data.transforms import create_scalogram_transform
-    from src.data.boas_dataset import create_boas_dataloaders
     from src.training.research_trainer import ResearchConfig, FoldTrainer
 
     exp_name = exp_config['name']
@@ -234,25 +232,47 @@ def run_experiment(
     try:
         # Find dataset path
         boas_path = Path(data_dir) / BOAS_DIR_NAME
+        cache_path = Path(data_dir) / 'ds005555_cache'
+
         if not boas_path.exists():
             raise FileNotFoundError(f"BOAS dataset not found at {boas_path}")
 
-        # Create CWT transform (converts 1D EEG epochs → 2D scalograms)
-        transform = create_scalogram_transform(
-            output_size=(224, 224), sampling_rate=100
-        )
+        # Enable cuDNN auto-tuning for faster convolutions
+        torch.backends.cudnn.benchmark = True
 
-        # Create data loaders
-        train_loader, val_loader, test_loader = create_boas_dataloaders(
-            data_dir=str(boas_path),
-            batch_size=batch_size,
-            transform=transform,
-            num_workers=4,
-            max_subjects=max_subjects,
-        )
+        # Try cached scalograms first (fast path: ~30s load vs ~60min CWT)
+        from src.data.boas_dataset import create_cached_dataloaders, create_boas_dataloaders
+        from src.data.transforms import create_scalogram_transform
+
+        if cache_path.exists() and (cache_path / 'train_data.pt').exists():
+            train_loader, val_loader, test_loader = create_cached_dataloaders(
+                cache_dir=str(cache_path),
+                batch_size=batch_size,
+            )
+        else:
+            # Fallback: on-the-fly CWT (slow but works without precomputing)
+            print("  [WARN] No scalogram cache found. Using slow CWT path.")
+            print("  [HINT] Run: python precompute_scalograms.py --data-dir data/ds005555")
+            transform = create_scalogram_transform(
+                output_size=(224, 224), sampling_rate=100
+            )
+            train_loader, val_loader, test_loader = create_boas_dataloaders(
+                data_dir=str(boas_path),
+                batch_size=batch_size,
+                transform=transform,
+                num_workers=4,
+                max_subjects=max_subjects,
+            )
 
         # Create model
         model = create_model(exp_config, num_classes=num_classes)
+
+        # Try torch.compile for PyTorch 2.x speed boost
+        try:
+            model = torch.compile(model)
+            print("  [OPT] torch.compile enabled")
+        except Exception:
+            pass  # Not available or model not compatible
 
         # Training config
         config = ResearchConfig(
@@ -376,7 +396,7 @@ def generate_summary(results: List[Dict], output_dir: str):
 def main():
     parser = argparse.ArgumentParser(description="EEG Sleep Staging Pipeline")
     parser.add_argument('--epochs', type=int, default=30, help='Training epochs')
-    parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
+    parser.add_argument('--batch-size', type=int, default=128, help='Batch size')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--data-dir', type=str, default='data', help='Dataset directory')
     parser.add_argument('--output-dir', type=str, default='outputs/results', help='Output directory')

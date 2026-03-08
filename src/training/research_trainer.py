@@ -25,7 +25,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 
 from sklearn.metrics import (
     accuracy_score,
@@ -44,6 +44,20 @@ try:
     HAS_TQDM = True
 except ImportError:
     HAS_TQDM = False
+
+# Graceful W&B integration (no crash if offline or missing)
+try:
+    import wandb
+    HAS_WANDB = True
+except ImportError:
+    HAS_WANDB = False
+
+# Graceful TensorBoard integration
+try:
+    from torch.utils.tensorboard import SummaryWriter
+    HAS_TENSORBOARD = True
+except ImportError:
+    HAS_TENSORBOARD = False
 
 
 # --------------------------------------------------------------------------
@@ -252,7 +266,32 @@ class FoldTrainer:
         self.scheduler = self._build_scheduler()
 
         # Mixed precision
-        self.scaler = GradScaler() if (config.mixed_precision and self.device.type == 'cuda') else None
+        self.scaler = GradScaler('cuda') if (config.mixed_precision and self.device.type == 'cuda') else None
+
+        # W&B — graceful init (no crash if offline)
+        self._wandb_active = False
+        if HAS_WANDB:
+            try:
+                wandb.init(
+                    project='eeg-sleep-staging',
+                    name=f'{config.experiment_name}_fold{fold}',
+                    config=asdict(config),
+                    reinit=True,
+                )
+                self._wandb_active = True
+                print(f'  [W&B] Logging to: {wandb.run.url}')
+            except Exception as e:
+                print(f'  [W&B] Init failed (offline?): {e}')
+
+        # TensorBoard — graceful init
+        self._tb_writer = None
+        if HAS_TENSORBOARD:
+            try:
+                tb_dir = Path(config.output_dir) / config.experiment_name / f'runs/fold_{fold}'
+                self._tb_writer = SummaryWriter(str(tb_dir))
+                print(f'  [TB] Logging to: {tb_dir}')
+            except Exception as e:
+                print(f'  [TB] Init failed: {e}')
 
         # History
         self.history: Dict[str, List[float]] = {
@@ -321,7 +360,7 @@ class FoldTrainer:
 
             # Forward
             if self.scaler is not None:
-                with autocast():
+                with autocast('cuda'):
                     outputs = self.model(inputs)
                     loss = self.criterion(outputs, targets)
                     loss = loss / self.config.gradient_accumulation_steps
@@ -458,6 +497,42 @@ class FoldTrainer:
                   f"Val Loss: {val_loss:.4f}  Acc: {val_acc:.1f}%  F1: {val_f1:.4f}  AUC: {val_auc:.4f} | "
                   f"LR: {lr:.2e} | {elapsed:.1f}s")
 
+            # W&B logging (graceful)
+            if self._wandb_active:
+                try:
+                    wandb.log({
+                        'epoch': epoch + 1,
+                        'train/loss': train_loss,
+                        'train/acc': train_acc,
+                        'val/loss': val_loss,
+                        'val/acc': val_acc,
+                        'val/f1': val_f1,
+                        'val/auc': val_auc,
+                        'val/precision': val_metrics.get('precision_macro', 0),
+                        'val/recall': val_metrics.get('recall_macro', 0),
+                        'val/specificity': val_metrics.get('specificity', 0),
+                        'lr': lr,
+                        'epoch_time_s': elapsed,
+                    })
+                except Exception:
+                    pass
+
+            # TensorBoard logging (graceful)
+            if self._tb_writer:
+                try:
+                    self._tb_writer.add_scalars('loss', {'train': train_loss, 'val': val_loss}, epoch + 1)
+                    self._tb_writer.add_scalars('accuracy', {'train': train_acc, 'val': val_acc}, epoch + 1)
+                    self._tb_writer.add_scalar('val/f1', val_f1, epoch + 1)
+                    self._tb_writer.add_scalar('val/auc', val_auc, epoch + 1)
+                    self._tb_writer.add_scalar('val/precision', val_metrics.get('precision_macro', 0), epoch + 1)
+                    self._tb_writer.add_scalar('val/recall', val_metrics.get('recall_macro', 0), epoch + 1)
+                    self._tb_writer.add_scalar('val/specificity', val_metrics.get('specificity', 0), epoch + 1)
+                    self._tb_writer.add_scalar('val/sensitivity', val_metrics.get('sensitivity', 0), epoch + 1)
+                    self._tb_writer.add_scalar('lr', lr, epoch + 1)
+                    self._tb_writer.add_scalar('epoch_time_s', elapsed, epoch + 1)
+                except Exception:
+                    pass
+
             # Early stopping
             metric_value = self._get_monitor_value(val_metrics)
             improved = self._check_improvement(metric_value)
@@ -490,6 +565,73 @@ class FoldTrainer:
 
         # Save history CSV
         self._save_history_csv()
+
+        # Cleanup: close W&B and TensorBoard
+        if self._wandb_active:
+            try:
+                # Log comprehensive final metrics
+                wandb.log({
+                    'final/accuracy': final_metrics.get('accuracy', 0),
+                    'final/balanced_accuracy': final_metrics.get('balanced_accuracy', 0),
+                    'final/f1_macro': final_metrics.get('f1_macro', 0),
+                    'final/f1_weighted': final_metrics.get('f1_weighted', 0),
+                    'final/precision_macro': final_metrics.get('precision_macro', 0),
+                    'final/recall_macro': final_metrics.get('recall_macro', 0),
+                    'final/specificity': final_metrics.get('specificity', 0),
+                    'final/sensitivity': final_metrics.get('sensitivity', 0),
+                    'final/auc_roc': final_metrics.get('auc_roc', 0),
+                    'final/MCC': final_metrics.get('MCC', 0),
+                    'final/cohens_kappa': final_metrics.get('cohens_kappa', 0),
+                    'final/best_epoch': final_metrics.get('best_epoch', 0),
+                })
+
+                # Log confusion matrix if available
+                cm = final_metrics.get('confusion_matrix')
+                class_names = final_metrics.get('class_names', [])
+                if cm is not None and class_names:
+                    try:
+                        wandb.log({
+                            'confusion_matrix': wandb.plot.confusion_matrix(
+                                probs=None,
+                                y_true=None,
+                                preds=None,
+                                class_names=class_names,
+                            )
+                        })
+                    except Exception:
+                        pass
+
+                # Summary metrics (appear in W&B run summary table)
+                wandb.run.summary['best_accuracy'] = final_metrics.get('accuracy', 0)
+                wandb.run.summary['best_f1'] = final_metrics.get('f1_macro', 0)
+                wandb.run.summary['best_auc'] = final_metrics.get('auc_roc', 0)
+                wandb.run.summary['best_epoch'] = final_metrics.get('best_epoch', 0)
+
+                wandb.finish()
+            except Exception:
+                try:
+                    wandb.finish()
+                except Exception:
+                    pass
+
+        if self._tb_writer:
+            try:
+                # Add hparams summary
+                self._tb_writer.add_hparams(
+                    {'lr': self.config.learning_rate,
+                     'batch_size': self.config.batch_size,
+                     'epochs': self.config.epochs,
+                     'optimizer': self.config.optimizer},
+                    {'hparam/accuracy': final_metrics.get('accuracy', 0),
+                     'hparam/f1': final_metrics.get('f1_macro', 0),
+                     'hparam/auc': final_metrics.get('auc_roc', 0)},
+                )
+                self._tb_writer.close()
+            except Exception:
+                try:
+                    self._tb_writer.close()
+                except Exception:
+                    pass
 
         return final_metrics
 

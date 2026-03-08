@@ -22,7 +22,7 @@ set -euo pipefail
 
 # ---- Configuration ----
 EPOCHS="${EPOCHS:-30}"
-BATCH_SIZE="${BATCH_SIZE:-16}"
+BATCH_SIZE="${BATCH_SIZE:-128}"
 LR="${LR:-0.001}"
 DATA_DIR="${DATA_DIR:-data}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/results}"
@@ -172,6 +172,9 @@ fi
 # Install project requirements
 pip install -r requirements.txt
 
+# Install monitoring tools
+pip install wandb tensorboard --quiet 2>/dev/null || true
+
 # Verify GPU + dependencies
 echo ""
 echo "  System Check:"
@@ -221,6 +224,25 @@ if [ -n "$MAX_SUBJECTS" ]; then
     PIPELINE_ARGS="$PIPELINE_ARGS --max-subjects $MAX_SUBJECTS"
 fi
 
+# W&B login (graceful — training continues without it)
+export WANDB_API_KEY="${WANDB_API_KEY:-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}"
+if python -c "import wandb" 2>/dev/null; then
+    echo "  [W&B] Logged in (project: eeg-sleep-staging)"
+else
+    echo "  [W&B] Not available, training will continue without it"
+fi
+
+# Precompute CWT scalograms (one-time, saves ~45min per experiment)
+CACHE_DIR="$DATA_DIR/ds005555_cache"
+if [ ! -f "$CACHE_DIR/train_data.pt" ]; then
+    echo ""
+    echo "[STEP 4a] Precomputing CWT Scalograms (one-time)"
+    echo "------------------------------------------------"
+    python precompute_scalograms.py --data-dir "$DATA_DIR/ds005555" --cache-dir "$CACHE_DIR"
+else
+    echo "  [CACHE] Scalograms already precomputed at $CACHE_DIR"
+fi
+
 export PYTHONWARNINGS="ignore::RuntimeWarning"
 python pipeline.py $PIPELINE_ARGS
 
@@ -234,8 +256,7 @@ echo "[STEP 5/5] Pushing Results to GitHub"
 echo "--------------------------------------"
 
 # Add all results (but not the huge dataset)
-echo "ds005555/" >> .gitignore 2>/dev/null || true
-echo "data/" >> .gitignore 2>/dev/null || true
+# .gitignore is already configured (results tracked, data ignored)
 
 git add -A
 
