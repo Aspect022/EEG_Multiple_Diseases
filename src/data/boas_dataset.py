@@ -437,33 +437,63 @@ def create_boas_dataloaders(
 
 
 # ---------------------------------------------------------------------------
-# Cached (Precomputed) Dataset — Zero CWT cost
+# Cached (Precomputed) Dataset — Memory-Mapped (Zero RAM Pressure)
 # ---------------------------------------------------------------------------
+
+import json as _json
+
 
 class CachedScalogramDataset(Dataset):
     """
-    Dataset backed by precomputed scalogram tensors in RAM.
+    Dataset backed by numpy memory-mapped scalogram files.
 
-    Loads .pt files produced by precompute_scalograms.py.
-    Per-sample cost: ~0.001ms (memory read only).
+    The OS page cache manages which pages are in RAM — only active
+    batches consume significant memory (~200 MB vs 25 GB for full load).
+
+    Supports two formats:
+      - numpy memmap: .npy data + .npy labels + _meta.json (preferred)
+      - legacy torch: .pt data + .pt labels
     """
 
-    def __init__(self, data_tensor: torch.Tensor, label_tensor: torch.Tensor):
-        self.data = data_tensor    # (N, 3, 224, 224) float16
-        self.labels = label_tensor  # (N,)
+    def __init__(self, data, labels, is_memmap: bool = False):
+        self.data = data                # np.memmap (N, C, H, W) or torch.Tensor
+        self.labels = labels            # np.ndarray or torch.Tensor
         self.num_classes = NUM_CLASSES
+        self._is_memmap = is_memmap
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
-        return self.data[idx].float(), int(self.labels[idx])
+        if self._is_memmap:
+            # Read from memmap → copy to numpy → convert to tensor
+            x = torch.from_numpy(self.data[idx].copy()).float()
+        else:
+            x = self.data[idx].float()
+        return x, int(self.labels[idx])
 
     def get_class_distribution(self) -> Dict[str, int]:
         if len(self.labels) == 0:
             return {}
-        unique, counts = np.unique(self.labels.numpy(), return_counts=True)
+        lbl = self.labels if isinstance(self.labels, np.ndarray) else self.labels.numpy()
+        unique, counts = np.unique(lbl, return_counts=True)
         return {CLASS_NAMES[int(u)]: int(c) for u, c in zip(unique, counts)}
+
+
+def _load_memmap_split(cache_path: Path, split: str):
+    """Load a single split from numpy memmap files."""
+    meta_path = cache_path / f"{split}_meta.json"
+    data_path = cache_path / f"{split}_data.npy"
+    label_path = cache_path / f"{split}_labels.npy"
+
+    with open(meta_path) as f:
+        meta = _json.load(f)
+
+    shape = (meta['n'], meta['C'], meta['H'], meta['W'])
+    data = np.memmap(str(data_path), dtype='float16', mode='r', shape=shape)
+    labels = np.load(str(label_path))
+
+    return data, labels
 
 
 def create_cached_dataloaders(
@@ -476,21 +506,50 @@ def create_cached_dataloaders(
     """
     Create DataLoaders from precomputed scalogram cache.
 
-    If cache not found and fallback_data_dir is provided, falls back to
-    on-the-fly CWT (slow path).
+    Supports two cache formats:
+      1. numpy memmap (.npy + _meta.json) — memory-efficient, recommended
+      2. legacy torch (.pt) — loads full tensors into RAM
 
-    Args:
-        cache_dir: Path to ds005555_cache/ with .pt files.
-        batch_size: Batch size (use 128+ for cached data).
-        fallback_data_dir: If cache missing, fall back to raw BOAS loader.
-        fallback_transform: Transform for fallback path.
-        fallback_max_subjects: Max subjects for fallback path.
+    Falls back to on-the-fly CWT if neither cache is found.
     """
     cache_path = Path(cache_dir)
 
-    # Check if cache exists
-    if (cache_path / 'train_data.pt').exists():
-        print(f"\n  [CACHE] Loading precomputed scalograms from {cache_path}")
+    # ── Format 1: numpy memmap (preferred) ──
+    if (cache_path / 'train_meta.json').exists():
+        print(f"\n  [CACHE] Loading memory-mapped scalograms from {cache_path}")
+        t0 = time.time()
+
+        train_data, train_labels = _load_memmap_split(cache_path, 'train')
+        val_data, val_labels = _load_memmap_split(cache_path, 'val')
+        test_data, test_labels = _load_memmap_split(cache_path, 'test')
+
+        elapsed = time.time() - t0
+        print(f"  [CACHE] Memory-mapped in {elapsed:.1f}s (data stays on disk)")
+        print(f"  [CACHE] Train: {len(train_labels)} | Val: {len(val_labels)} | Test: {len(test_labels)}")
+        disk_gb = sum(
+            (cache_path / f"{s}_data.npy").stat().st_size for s in ['train', 'val', 'test']
+        ) / 1e9
+        print(f"  [CACHE] Disk usage: {disk_gb:.1f} GB | RAM usage: ~0.2 GB (page cache)")
+
+        train_ds = CachedScalogramDataset(train_data, train_labels, is_memmap=True)
+        val_ds = CachedScalogramDataset(val_data, val_labels, is_memmap=True)
+        test_ds = CachedScalogramDataset(test_data, test_labels, is_memmap=True)
+
+        # For memmap: use num_workers=4 (OS handles page reads efficiently)
+        pin = torch.cuda.is_available()
+        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                                  num_workers=4, pin_memory=pin, persistent_workers=True)
+        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
+                                num_workers=2, pin_memory=pin, persistent_workers=True)
+        test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False,
+                                 num_workers=2, pin_memory=pin, persistent_workers=True)
+
+        print(f"\n  Train: {len(train_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
+        return train_loader, val_loader, test_loader
+
+    # ── Format 2: legacy torch .pt (full RAM load) ──
+    elif (cache_path / 'train_data.pt').exists():
+        print(f"\n  [CACHE] Loading .pt scalograms from {cache_path} (legacy format)")
         t0 = time.time()
 
         train_data = torch.load(cache_path / 'train_data.pt', weights_only=True)
@@ -502,17 +561,11 @@ def create_cached_dataloaders(
 
         elapsed = time.time() - t0
         print(f"  [CACHE] Loaded in {elapsed:.1f}s")
-        print(f"  [CACHE] Train: {len(train_labels)} | Val: {len(val_labels)} | Test: {len(test_labels)}")
-        mem_gb = (train_data.element_size() * train_data.nelement() +
-                  val_data.element_size() * val_data.nelement() +
-                  test_data.element_size() * test_data.nelement()) / 1e9
-        print(f"  [CACHE] RAM usage: {mem_gb:.1f} GB")
 
-        train_ds = CachedScalogramDataset(train_data, train_labels)
-        val_ds = CachedScalogramDataset(val_data, val_labels)
-        test_ds = CachedScalogramDataset(test_data, test_labels)
+        train_ds = CachedScalogramDataset(train_data, train_labels, is_memmap=False)
+        val_ds = CachedScalogramDataset(val_data, val_labels, is_memmap=False)
+        test_ds = CachedScalogramDataset(test_data, test_labels, is_memmap=False)
 
-        # For cached data: num_workers=0 (data already in RAM), pin_memory=True
         pin = torch.cuda.is_available()
         train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
                                   num_workers=0, pin_memory=pin)
@@ -524,6 +577,7 @@ def create_cached_dataloaders(
         print(f"\n  Train: {len(train_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
         return train_loader, val_loader, test_loader
 
+    # ── No cache found: fallback ──
     else:
         print(f"\n  [CACHE] No cache found at {cache_path}")
         if fallback_data_dir:

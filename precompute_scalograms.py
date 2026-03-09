@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Precompute CWT Scalograms for BOAS Dataset (Memory-Safe).
+Precompute CWT Scalograms — Memory-Mapped (Zero RAM Pressure).
 
-Strategy: Save each chunk to DISK immediately (never accumulate in RAM).
-After all chunks are saved and raw data is freed, concatenate from disk.
+Uses numpy memmap to write each sample DIRECTLY to a file on disk.
+Peak RAM = raw dataset (~12 GB) + 1 sample (negligible).
+Never loads/concatenates the full output tensor.
 
-Peak RAM during precompute: ~12 GB (raw dataset) + 150 MB (1 chunk) = ~12.2 GB
-Peak RAM during concatenation: ~25 GB (output tensor only, raw data freed)
+During training, CachedScalogramDataset opens the memmap in read-only mode
+and the OS page cache serves data on demand — only active pages are in RAM.
 
 Usage:
     python precompute_scalograms.py --data-dir data/ds005555
@@ -30,9 +31,6 @@ from src.data.boas_dataset import BOASDataset
 from src.data.transforms import create_scalogram_transform
 
 
-CHUNK_SIZE = 500
-
-
 def precompute_split(
     data_dir: str,
     split: str,
@@ -40,7 +38,7 @@ def precompute_split(
     cache_dir: Path,
     max_subjects: int = None,
 ):
-    """Precompute scalograms for one split. Saves chunks to disk to avoid OOM."""
+    """Precompute scalograms for one split using memory-mapped files."""
     print(f"\n{'='*60}")
     print(f"  Precomputing: {split.upper()}")
     print(f"{'='*60}")
@@ -61,90 +59,59 @@ def precompute_split(
     print(f"  Samples: {n}")
     print(f"  Class dist: {dataset.get_class_distribution()}")
 
-    # Get output shape from first sample
+    # Get shape from first sample
     raw_signal, _ = dataset[0]
     sample_out = transform(raw_signal)
-    shape = sample_out.shape
-    print(f"  Scalogram shape: {shape}")
-    print(f"  Estimated final size: {n * np.prod(shape) * 2 / 1e9:.2f} GB (float16)")
+    C, H, W = sample_out.shape
+    print(f"  Scalogram shape: ({C}, {H}, {W})")
+    size_gb = n * C * H * W * 2 / 1e9
+    print(f"  Output file size: {size_gb:.2f} GB (float16)")
 
-    # ── Shard directory ──
-    shard_dir = cache_dir / f"{split}_shards"
-    shard_dir.mkdir(parents=True, exist_ok=True)
+    # ── Create memory-mapped file ──
+    # This allocates space on DISK, not in RAM!
+    data_path = cache_dir / f"{split}_data.npy"
+    label_path = cache_dir / f"{split}_labels.npy"
 
-    num_chunks = (n + CHUNK_SIZE - 1) // CHUNK_SIZE
-    print(f"  Processing {num_chunks} chunks (saving each to disk immediately)...")
+    print(f"  Creating memmap file: {data_path}")
+    data_mmap = np.memmap(
+        str(data_path), dtype='float16', mode='w+', shape=(n, C, H, W)
+    )
+    labels = np.zeros(n, dtype='int64')
 
+    # ── Write samples one by one ──
+    # Peak RAM: raw dataset + 1 sample transform = ~12 GB total
     t0 = time.time()
+    flush_every = 200  # Flush to disk periodically
 
-    # ── Phase 1: Transform + save each chunk to disk ──
-    # Peak RAM: raw_dataset (~12GB) + one chunk (~150MB) = ~12.2 GB
-    for chunk_idx in range(num_chunks):
-        start = chunk_idx * CHUNK_SIZE
-        end = min(start + CHUNK_SIZE, n)
-        chunk_n = end - start
+    for i in tqdm(range(n), desc=f"  [{split}]", ncols=80):
+        raw_signal, label = dataset[i]
+        scalogram = transform(raw_signal)
+        data_mmap[i] = scalogram.numpy().astype('float16')
+        labels[i] = label
 
-        chunk_data = torch.zeros((chunk_n, *shape), dtype=torch.float16)
-        chunk_labels = torch.zeros(chunk_n, dtype=torch.long)
+        if (i + 1) % flush_every == 0:
+            data_mmap.flush()
 
-        for i in tqdm(range(start, end), desc=f"  [{split}] chunk {chunk_idx+1}/{num_chunks}", ncols=80):
-            raw_signal, label = dataset[i]
-            scalogram = transform(raw_signal)
-            chunk_data[i - start] = scalogram.half()
-            chunk_labels[i - start] = label
-
-        # Save chunk to disk IMMEDIATELY — don't keep in RAM
-        torch.save(chunk_data, shard_dir / f"data_{chunk_idx:04d}.pt")
-        torch.save(chunk_labels, shard_dir / f"labels_{chunk_idx:04d}.pt")
-
-        # Free the chunk from RAM
-        del chunk_data, chunk_labels
-        gc.collect()
+    # Final flush
+    data_mmap.flush()
 
     elapsed = time.time() - t0
     rate = n / elapsed if elapsed > 0 else 0
-    print(f"  Phase 1 done: {elapsed:.1f}s ({rate:.0f} samples/sec)")
+    print(f"  Done: {elapsed:.1f}s ({rate:.0f} samples/sec)")
 
-    # ── Free raw dataset to reclaim ~12 GB ──
-    del dataset
-    gc.collect()
-    print(f"  Raw dataset freed from memory.")
-
-    # ── Phase 2: Concatenate shards into final files ──
-    # Peak RAM: ~25 GB (output tensor only, raw data is gone)
-    print(f"  Phase 2: Concatenating {num_chunks} shards from disk...")
-
-    data_chunks = []
-    label_chunks = []
-    for chunk_idx in range(num_chunks):
-        d = torch.load(shard_dir / f"data_{chunk_idx:04d}.pt", weights_only=True)
-        l = torch.load(shard_dir / f"labels_{chunk_idx:04d}.pt", weights_only=True)
-        data_chunks.append(d)
-        label_chunks.append(l)
-
-    data_tensor = torch.cat(data_chunks, dim=0)
-    label_tensor = torch.cat(label_chunks, dim=0)
-    del data_chunks, label_chunks
-    gc.collect()
-
-    # Save final files
-    data_path = cache_dir / f"{split}_data.pt"
-    label_path = cache_dir / f"{split}_labels.pt"
-    torch.save(data_tensor, data_path)
-    torch.save(label_tensor, label_path)
-
-    file_size_gb = data_path.stat().st_size / 1e9
-    print(f"  Saved: {data_path} ({file_size_gb:.2f} GB)")
+    # Save labels (small — just N int64 values)
+    np.save(str(label_path), labels)
+    print(f"  Saved: {data_path} ({size_gb:.2f} GB)")
     print(f"  Saved: {label_path}")
 
-    # Cleanup shards
-    del data_tensor, label_tensor
-    gc.collect()
+    # Save shape metadata for this split
+    meta = {'n': n, 'C': C, 'H': H, 'W': W, 'dtype': 'float16'}
+    with open(cache_dir / f"{split}_meta.json", 'w') as f:
+        json.dump(meta, f)
 
-    for f in shard_dir.iterdir():
-        f.unlink()
-    shard_dir.rmdir()
-    print(f"  Shard files cleaned up.")
+    # ── Free everything ──
+    del data_mmap, labels, dataset
+    gc.collect()
 
     return n
 
@@ -165,12 +132,12 @@ def main():
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
-    print("  SCALOGRAM PRECOMPUTATION (Memory-Safe)")
+    print("  SCALOGRAM PRECOMPUTATION (Memory-Mapped)")
     print("=" * 60)
     print(f"  Data dir:    {args.data_dir}")
     print(f"  Cache dir:   {cache_dir}")
-    print(f"  Chunk size:  {CHUNK_SIZE} (saved to disk, NOT accumulated in RAM)")
     print(f"  Output size: {args.output_size}x{args.output_size}")
+    print(f"  Strategy:    numpy memmap (writes to disk, ~0 RAM)")
     print(f"  Max subjects: {args.max_subjects or 'all'}")
     print("=" * 60)
 
@@ -201,12 +168,13 @@ def main():
     print(f"  Cache dir:     {cache_dir}")
     print(f"{'='*60}")
 
+    # Global metadata
     meta = {
         'total_samples': total_samples,
         'output_size': args.output_size,
         'dtype': 'float16',
-        'chunk_size': CHUNK_SIZE,
-        'precompute_time_seconds': elapsed,
+        'format': 'numpy_memmap',
+        'precompute_time_seconds': round(elapsed, 1),
         'data_dir': str(args.data_dir),
     }
     with open(cache_dir / 'metadata.json', 'w') as f:

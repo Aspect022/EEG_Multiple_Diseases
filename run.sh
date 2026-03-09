@@ -234,11 +234,11 @@ fi
 
 # Precompute CWT scalograms (one-time, saves ~45min per experiment)
 CACHE_DIR="$DATA_DIR/ds005555_cache"
-if [ ! -f "$CACHE_DIR/train_data.pt" ]; then
+if [ ! -f "$CACHE_DIR/train_meta.json" ] && [ ! -f "$CACHE_DIR/train_data.pt" ]; then
     echo ""
-    echo "[STEP 4a] Precomputing CWT Scalograms (one-time)"
-    echo "------------------------------------------------"
-    # Clean up any leftover shards from previous failed runs
+    echo "[STEP 4a] Precomputing CWT Scalograms (one-time, memory-mapped)"
+    echo "----------------------------------------------------------------"
+    # Clean up any leftover files from previous failed runs
     rm -rf "$CACHE_DIR/train_shards" "$CACHE_DIR/val_shards" "$CACHE_DIR/test_shards" 2>/dev/null
     python precompute_scalograms.py --data-dir "$DATA_DIR/ds005555" --cache-dir "$CACHE_DIR"
     if [ $? -ne 0 ]; then
