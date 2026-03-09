@@ -275,12 +275,8 @@ def run_experiment(
         # Create model
         model = create_model(exp_config, num_classes=num_classes)
 
-        # Try torch.compile for PyTorch 2.x speed boost
-        try:
-            model = torch.compile(model)
-            print("  [OPT] torch.compile enabled")
-        except Exception:
-            pass  # Not available or model not compatible
+        # Note: torch.compile disabled — hangs on SNN/quantum dynamic graphs
+        # The A100 with AMP is fast enough without it
 
         # Training config
         config = ResearchConfig(
