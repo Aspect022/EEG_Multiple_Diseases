@@ -535,15 +535,15 @@ def create_cached_dataloaders(
         val_ds = CachedScalogramDataset(val_data, val_labels, is_memmap=True)
         test_ds = CachedScalogramDataset(test_data, test_labels, is_memmap=True)
 
-        # num_workers=0 is mandatory for numpy memmap — forked workers deadlock
-        # on the same file descriptor. OS page cache makes single-process fast.
+        # num_workers=4 prefetches batches while GPU computes.
+        # Read-only memmap (mode='r') is safe with forked workers.
         pin = torch.cuda.is_available()
         train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                                  num_workers=0, pin_memory=pin)
+                                  num_workers=4, pin_memory=pin, prefetch_factor=3)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
-                                num_workers=0, pin_memory=pin)
+                                num_workers=2, pin_memory=pin, prefetch_factor=3)
         test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False,
-                                 num_workers=0, pin_memory=pin)
+                                 num_workers=2, pin_memory=pin, prefetch_factor=3)
 
         print(f"\n  Train: {len(train_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
         return train_loader, val_loader, test_loader
