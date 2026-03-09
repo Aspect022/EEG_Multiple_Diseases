@@ -80,7 +80,7 @@ class ResearchConfig:
     scheduler: str = 'cosine'            # cosine | step | plateau | none
     warmup_epochs: int = 3
     batch_size: int = 32
-    num_workers: int = 0
+    num_workers: int = 4
 
     # --- Training tricks ---
     mixed_precision: bool = True
@@ -119,7 +119,7 @@ def seed_everything(seed: int = 42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.benchmark = True   # Keep True for speed (A100)
 
 
 # --------------------------------------------------------------------------
