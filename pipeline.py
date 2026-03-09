@@ -244,7 +244,15 @@ def run_experiment(
         from src.data.boas_dataset import create_cached_dataloaders, create_boas_dataloaders
         from src.data.transforms import create_scalogram_transform
 
-        if cache_path.exists() and (cache_path / 'train_data.pt').exists():
+        # Check for cache: memmap (.npy) or legacy (.pt)
+        has_cache = (
+            cache_path.exists() and (
+                (cache_path / 'train_meta.json').exists() or
+                (cache_path / 'train_data.pt').exists()
+            )
+        )
+
+        if has_cache:
             train_loader, val_loader, test_loader = create_cached_dataloaders(
                 cache_dir=str(cache_path),
                 batch_size=batch_size,
