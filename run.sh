@@ -238,7 +238,12 @@ if [ ! -f "$CACHE_DIR/train_data.pt" ]; then
     echo ""
     echo "[STEP 4a] Precomputing CWT Scalograms (one-time)"
     echo "------------------------------------------------"
+    # Clean up any leftover shards from previous failed runs
+    rm -rf "$CACHE_DIR/train_shards" "$CACHE_DIR/val_shards" "$CACHE_DIR/test_shards" 2>/dev/null
     python precompute_scalograms.py --data-dir "$DATA_DIR/ds005555" --cache-dir "$CACHE_DIR"
+    if [ $? -ne 0 ]; then
+        echo "  [ERROR] Precompute failed! Training will use on-the-fly CWT (slower)."
+    fi
 else
     echo "  [CACHE] Scalograms already precomputed at $CACHE_DIR"
 fi

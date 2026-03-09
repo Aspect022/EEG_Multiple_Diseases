@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Precompute CWT Scalograms for BOAS Dataset (Memory-Efficient).
+Precompute CWT Scalograms for BOAS Dataset (Memory-Safe).
 
-Converts raw EEG epochs → 2D scalogram tensors in chunks to avoid OOM.
-Saves as sharded .pt files, then the cached dataloader concatenates them.
+Strategy: Save each chunk to DISK immediately (never accumulate in RAM).
+After all chunks are saved and raw data is freed, concatenate from disk.
+
+Peak RAM during precompute: ~12 GB (raw dataset) + 150 MB (1 chunk) = ~12.2 GB
+Peak RAM during concatenation: ~25 GB (output tensor only, raw data freed)
 
 Usage:
     python precompute_scalograms.py --data-dir data/ds005555
-    python precompute_scalograms.py --data-dir data/ds005555 --max-subjects 10
 """
 
 import os
@@ -28,7 +30,7 @@ from src.data.boas_dataset import BOASDataset
 from src.data.transforms import create_scalogram_transform
 
 
-CHUNK_SIZE = 500  # Process 500 samples at a time to stay under RAM limits
+CHUNK_SIZE = 500
 
 
 def precompute_split(
@@ -38,11 +40,12 @@ def precompute_split(
     cache_dir: Path,
     max_subjects: int = None,
 ):
-    """Precompute scalograms for one split, saving in chunks."""
+    """Precompute scalograms for one split. Saves chunks to disk to avoid OOM."""
     print(f"\n{'='*60}")
     print(f"  Precomputing: {split.upper()}")
     print(f"{'='*60}")
 
+    # ── Load raw dataset ──
     dataset = BOASDataset(
         data_dir=data_dir,
         split=split,
@@ -58,20 +61,24 @@ def precompute_split(
     print(f"  Samples: {n}")
     print(f"  Class dist: {dataset.get_class_distribution()}")
 
-    # Get shape from first sample
+    # Get output shape from first sample
     raw_signal, _ = dataset[0]
     sample_out = transform(raw_signal)
     shape = sample_out.shape
     print(f"  Scalogram shape: {shape}")
-    print(f"  Estimated size: {n * np.prod(shape) * 2 / 1e9:.2f} GB (float16)")
-    print(f"  Processing in chunks of {CHUNK_SIZE}...")
+    print(f"  Estimated final size: {n * np.prod(shape) * 2 / 1e9:.2f} GB (float16)")
 
-    # Process in chunks — collect all data then save at end
-    all_data_chunks = []
-    all_label_chunks = []
-    t0 = time.time()
+    # ── Shard directory ──
+    shard_dir = cache_dir / f"{split}_shards"
+    shard_dir.mkdir(parents=True, exist_ok=True)
 
     num_chunks = (n + CHUNK_SIZE - 1) // CHUNK_SIZE
+    print(f"  Processing {num_chunks} chunks (saving each to disk immediately)...")
+
+    t0 = time.time()
+
+    # ── Phase 1: Transform + save each chunk to disk ──
+    # Peak RAM: raw_dataset (~12GB) + one chunk (~150MB) = ~12.2 GB
     for chunk_idx in range(num_chunks):
         start = chunk_idx * CHUNK_SIZE
         end = min(start + CHUNK_SIZE, n)
@@ -86,31 +93,43 @@ def precompute_split(
             chunk_data[i - start] = scalogram.half()
             chunk_labels[i - start] = label
 
-        all_data_chunks.append(chunk_data)
-        all_label_chunks.append(chunk_labels)
+        # Save chunk to disk IMMEDIATELY — don't keep in RAM
+        torch.save(chunk_data, shard_dir / f"data_{chunk_idx:04d}.pt")
+        torch.save(chunk_labels, shard_dir / f"labels_{chunk_idx:04d}.pt")
 
-        # Force garbage collection between chunks
+        # Free the chunk from RAM
+        del chunk_data, chunk_labels
         gc.collect()
 
     elapsed = time.time() - t0
     rate = n / elapsed if elapsed > 0 else 0
-    print(f"  Transform done: {elapsed:.1f}s ({rate:.0f} samples/sec)")
+    print(f"  Phase 1 done: {elapsed:.1f}s ({rate:.0f} samples/sec)")
 
-    # Free the raw dataset to reclaim RAM before concatenating
+    # ── Free raw dataset to reclaim ~12 GB ──
     del dataset
     gc.collect()
+    print(f"  Raw dataset freed from memory.")
 
-    # Concatenate all chunks
-    print(f"  Concatenating {num_chunks} chunks...")
-    data_tensor = torch.cat(all_data_chunks, dim=0)
-    label_tensor = torch.cat(all_label_chunks, dim=0)
-    del all_data_chunks, all_label_chunks
+    # ── Phase 2: Concatenate shards into final files ──
+    # Peak RAM: ~25 GB (output tensor only, raw data is gone)
+    print(f"  Phase 2: Concatenating {num_chunks} shards from disk...")
+
+    data_chunks = []
+    label_chunks = []
+    for chunk_idx in range(num_chunks):
+        d = torch.load(shard_dir / f"data_{chunk_idx:04d}.pt", weights_only=True)
+        l = torch.load(shard_dir / f"labels_{chunk_idx:04d}.pt", weights_only=True)
+        data_chunks.append(d)
+        label_chunks.append(l)
+
+    data_tensor = torch.cat(data_chunks, dim=0)
+    label_tensor = torch.cat(label_chunks, dim=0)
+    del data_chunks, label_chunks
     gc.collect()
 
-    # Save
+    # Save final files
     data_path = cache_dir / f"{split}_data.pt"
     label_path = cache_dir / f"{split}_labels.pt"
-
     torch.save(data_tensor, data_path)
     torch.save(label_tensor, label_path)
 
@@ -118,9 +137,14 @@ def precompute_split(
     print(f"  Saved: {data_path} ({file_size_gb:.2f} GB)")
     print(f"  Saved: {label_path}")
 
-    # Free memory before next split
+    # Cleanup shards
     del data_tensor, label_tensor
     gc.collect()
+
+    for f in shard_dir.iterdir():
+        f.unlink()
+    shard_dir.rmdir()
+    print(f"  Shard files cleaned up.")
 
     return n
 
@@ -141,12 +165,12 @@ def main():
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
-    print("  SCALOGRAM PRECOMPUTATION (Memory-Efficient)")
+    print("  SCALOGRAM PRECOMPUTATION (Memory-Safe)")
     print("=" * 60)
     print(f"  Data dir:    {args.data_dir}")
     print(f"  Cache dir:   {cache_dir}")
-    print(f"  Chunk size:  {CHUNK_SIZE}")
-    print(f"  Output size: {args.output_size}×{args.output_size}")
+    print(f"  Chunk size:  {CHUNK_SIZE} (saved to disk, NOT accumulated in RAM)")
+    print(f"  Output size: {args.output_size}x{args.output_size}")
     print(f"  Max subjects: {args.max_subjects or 'all'}")
     print("=" * 60)
 
@@ -158,7 +182,6 @@ def main():
     total_time = time.time()
     total_samples = 0
 
-    # Process one split at a time, freeing memory between splits
     for split in ['train', 'val', 'test']:
         n = precompute_split(
             data_dir=args.data_dir,
@@ -168,7 +191,7 @@ def main():
             max_subjects=args.max_subjects,
         )
         total_samples += n
-        gc.collect()  # Free memory between splits
+        gc.collect()
 
     elapsed = time.time() - total_time
     print(f"\n{'='*60}")
