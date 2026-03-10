@@ -162,7 +162,7 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             model_name=exp_config['backbone'],
             num_classes=num_classes,
             neuron_type=exp_config['neuron_type'],
-            num_timesteps=25,
+            num_timesteps=10,
         )
 
     elif exp_type == 'snn_vit':
@@ -171,7 +171,7 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             num_classes=num_classes,
             neuron_type=exp_config['neuron_type'],
             variant='small',
-            num_timesteps=25,
+            num_timesteps=10,
         )
 
     elif exp_type == 'quantum':
@@ -457,16 +457,35 @@ def main():
     # Step 3: Run experiments
     all_results = []
     for exp_key, exp_config in experiments.items():
-        result = run_experiment(
-            exp_key=exp_key,
-            exp_config=exp_config,
-            data_dir=args.data_dir,
-            output_dir=args.output_dir,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            learning_rate=args.lr,
-            max_subjects=args.max_subjects,
-        )
+        # Try with full batch size, halve on OOM (128 → 64 → 32)
+        batch = args.batch_size
+        result = None
+        while batch >= 16:
+            result = run_experiment(
+                exp_key=exp_key,
+                exp_config=exp_config,
+                data_dir=args.data_dir,
+                output_dir=args.output_dir,
+                epochs=args.epochs,
+                batch_size=batch,
+                learning_rate=args.lr,
+                max_subjects=args.max_subjects,
+            )
+
+            # Check if it was an OOM failure
+            if 'error' in result and 'out of memory' in str(result['error']).lower():
+                old_batch = batch
+                batch = batch // 2
+                print(f"\n  [OOM RETRY] {exp_config['name']}: batch {old_batch} → {batch}")
+                # Aggressive VRAM cleanup before retry
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.reset_peak_memory_stats()
+                import gc; gc.collect()
+                continue
+            else:
+                break  # Success or non-OOM error
+
         all_results.append(result)
 
         # Free GPU memory between experiments
