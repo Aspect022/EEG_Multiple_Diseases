@@ -60,6 +60,22 @@ EXPERIMENT_DEFS = {
         'type': 'swin',
         'name': 'Swin-Transformer',
     },
+    'vit': {
+        'type': 'vit',
+        'name': 'ViT-Small',
+    },
+    'deit': {
+        'type': 'deit',
+        'name': 'DeiT-Small',
+    },
+    'efficientnet': {
+        'type': 'efficientnet',
+        'name': 'EfficientNet-B0',
+    },
+    'convnext': {
+        'type': 'convnext',
+        'name': 'ConvNeXt-Tiny',
+    },
 }
 
 # Add quantum experiments dynamically
@@ -187,6 +203,34 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
         from src.models.transformer import create_swin_classifier
         return create_swin_classifier(
             model_name='swin_tiny_patch4_window7_224',
+            num_classes=num_classes,
+            pretrained=True,
+        )
+
+    elif exp_type == 'vit':
+        from src.models.transformer import create_vit_classifier
+        return create_vit_classifier(
+            num_classes=num_classes,
+            pretrained=True,
+        )
+
+    elif exp_type == 'deit':
+        from src.models.transformer import create_deit_classifier
+        return create_deit_classifier(
+            num_classes=num_classes,
+            pretrained=True,
+        )
+
+    elif exp_type == 'efficientnet':
+        from src.models.transformer import create_efficientnet_classifier
+        return create_efficientnet_classifier(
+            num_classes=num_classes,
+            pretrained=True,
+        )
+
+    elif exp_type == 'convnext':
+        from src.models.transformer import create_convnext_classifier
+        return create_convnext_classifier(
             num_classes=num_classes,
             pretrained=True,
         )
@@ -414,7 +458,7 @@ def main():
     print("=" * 70)
     print("  EEG SLEEP STAGING PIPELINE")
     print("  Dataset: BOAS ds005555 (W/N1/N2/N3/REM)")
-    print("  Models: SNN (LIF/QIF) × ResNet/ViT + Quantum (14 combos) + Swin")
+    print("  Models: SNN (4) + Transformer (3) + CNN (2) + Quantum (14) = 23")
     print("=" * 70)
     print(f"  Epochs:       {args.epochs}")
     print(f"  Batch Size:   {args.batch_size}")

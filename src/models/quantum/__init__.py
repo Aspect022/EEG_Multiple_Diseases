@@ -1,29 +1,28 @@
-"""Hybrid Quantum-Classical models."""
+"""Quantum models for EEG Sleep Staging."""
 
 from .hybrid_cnn import (
-    HybridQuantumCNN,
     EfficientHybridCNN,
-    QuantumConvLayer,
-    QuanvFilter,
     create_hybrid_quantum_cnn,
-    get_quantum_device,
-    apply_entanglement,
-    apply_rotations,
     VALID_ROTATIONS,
     VALID_ENTANGLEMENTS,
-    ROTATION_PARAMS,
+)
+
+from .quantum_circuit import (
+    VectorizedQuantumCircuit,
+    QuantumMeasurement,
+    QuantumGates,
+    ROTATION_MAP,
+    ENTANGLEMENT_MAP,
 )
 
 __all__ = [
-    'HybridQuantumCNN',
     'EfficientHybridCNN',
-    'QuantumConvLayer',
-    'QuanvFilter',
     'create_hybrid_quantum_cnn',
-    'get_quantum_device',
-    'apply_entanglement',
-    'apply_rotations',
+    'VectorizedQuantumCircuit',
+    'QuantumMeasurement',
+    'QuantumGates',
     'VALID_ROTATIONS',
     'VALID_ENTANGLEMENTS',
-    'ROTATION_PARAMS',
+    'ROTATION_MAP',
+    'ENTANGLEMENT_MAP',
 ]
