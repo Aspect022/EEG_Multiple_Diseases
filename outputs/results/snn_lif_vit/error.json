@@ -1,0 +1,7 @@
+{
+  "experiment": "snn_lif_vit",
+  "name": "SNN-ViT-LIF",
+  "error": "num_samples should be a positive integer value, but got num_samples=0",
+  "duration_seconds": 637.6788177490234,
+  "timestamp": "2026-03-07T22:15:53.637759"
+}

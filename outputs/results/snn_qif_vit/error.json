@@ -1,0 +1,7 @@
+{
+  "experiment": "snn_qif_vit",
+  "name": "SNN-ViT-QIF",
+  "error": "CUDA out of memory. Tried to allocate 98.00 MiB. GPU 0 has a total capacity of 79.25 GiB of which 24.94 MiB is free. Process 259529 has 422.08 MiB memory in use. Process 681962 has 2.95 GiB memory in use. Including non-PyTorch memory, this process has 75.82 GiB memory in use. Of the allocated memory 74.47 GiB is allocated by PyTorch, and 850.42 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)",
+  "duration_seconds": 5.771305322647095,
+  "timestamp": "2026-03-10T08:52:00.832730"
+}
