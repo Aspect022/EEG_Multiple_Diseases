@@ -1,0 +1,7 @@
+{
+  "experiment": "quantum_ring_RXZ",
+  "name": "Quantum-ring-RXZ",
+  "error": "num_samples should be a positive integer value, but got num_samples=0",
+  "duration_seconds": 893.6655585765839,
+  "timestamp": "2026-03-08T00:11:49.102681"
+}

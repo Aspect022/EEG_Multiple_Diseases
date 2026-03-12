@@ -1,0 +1,7 @@
+{
+  "experiment": "snn_lif_resnet",
+  "name": "SNN-ResNet18-LIF",
+  "error": "'precision'",
+  "duration_seconds": 7484.559167385101,
+  "timestamp": "2026-03-08T00:45:52.312844"
+}

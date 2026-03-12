@@ -1,0 +1,7 @@
+{
+  "experiment": "snn_qif_resnet",
+  "name": "SNN-ResNet18-QIF",
+  "error": "CUDA out of memory. Tried to allocate 392.00 MiB. GPU 0 has a total capacity of 79.25 GiB of which 36.94 MiB is free. Process 259529 has 422.08 MiB memory in use. Process 681962 has 2.95 GiB memory in use. Including non-PyTorch memory, this process has 75.80 GiB memory in use. Of the allocated memory 74.61 GiB is allocated by PyTorch, and 697.84 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)",
+  "duration_seconds": 6.751200914382935,
+  "timestamp": "2026-03-10T03:29:00.610422"
+}
