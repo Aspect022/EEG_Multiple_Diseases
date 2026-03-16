@@ -78,7 +78,7 @@ EXPERIMENT_DEFS = {
     },
 }
 
-# Add quantum experiments dynamically
+# Add quantum experiments dynamically (2D scalogram-based)
 for ent in QUANTUM_ENTANGLEMENTS:
     for rot in QUANTUM_ROTATIONS:
         key = f'quantum_{ent}_{rot}'
@@ -87,7 +87,48 @@ for ent in QUANTUM_ENTANGLEMENTS:
             'entanglement': ent,
             'rotation': rot,
             'name': f'Quantum-{ent}-{rot}',
+            'data_mode': '2d',
         }
+
+# ── Phase 2: 1D Signal Models ──
+EXPERIMENT_DEFS['snn_1d_lif'] = {
+    'type': 'snn_1d', 'attention': False,
+    'name': 'SNN-1D-LIF', 'data_mode': '1d',
+}
+EXPERIMENT_DEFS['snn_1d_attn'] = {
+    'type': 'snn_1d', 'attention': True,
+    'name': 'SNN-1D-Attention', 'data_mode': '1d',
+}
+EXPERIMENT_DEFS['spiking_vit_1d'] = {
+    'type': 'spiking_vit_1d',
+    'name': 'Spiking-ViT-1D', 'data_mode': '1d',
+}
+
+# Add Quantum 1D experiments dynamically (raw signal-based)
+for ent in QUANTUM_ENTANGLEMENTS:
+    for rot in QUANTUM_ROTATIONS:
+        key = f'quantum_1d_{ent}_{rot}'
+        EXPERIMENT_DEFS[key] = {
+            'type': 'quantum_1d',
+            'entanglement': ent,
+            'rotation': rot,
+            'name': f'Q1D-{ent}-{rot}',
+            'data_mode': '1d',
+        }
+
+# Fusion experiments
+EXPERIMENT_DEFS['fusion_a'] = {
+    'type': 'fusion_a',
+    'name': 'Fusion-Swin-ConvNeXt', 'data_mode': '2d',
+}
+EXPERIMENT_DEFS['fusion_b'] = {
+    'type': 'fusion_b',
+    'name': 'Fusion-Hybrid-4Way', 'data_mode': '2d',
+}
+EXPERIMENT_DEFS['fusion_c'] = {
+    'type': 'fusion_c',
+    'name': 'Fusion-MultiModal', 'data_mode': 'both',
+}
 
 
 # =========================================================================
@@ -235,6 +276,37 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             pretrained=True,
         )
 
+    elif exp_type == 'snn_1d':
+        from src.models.snn_1d import create_snn_1d_lif, create_snn_1d_attention
+        if exp_config.get('attention', False):
+            return create_snn_1d_attention(num_classes=num_classes)
+        else:
+            return create_snn_1d_lif(num_classes=num_classes)
+
+    elif exp_type == 'spiking_vit_1d':
+        from src.models.snn_1d import create_spiking_vit_1d
+        return create_spiking_vit_1d(num_classes=num_classes)
+
+    elif exp_type == 'quantum_1d':
+        from src.models.quantum.quantum_1d import create_quantum_1d
+        return create_quantum_1d(
+            num_classes=num_classes,
+            rotation=exp_config['rotation'],
+            entanglement=exp_config['entanglement'],
+        )
+
+    elif exp_type == 'fusion_a':
+        from src.models.fusion import create_fusion_a
+        return create_fusion_a(num_classes=num_classes)
+
+    elif exp_type == 'fusion_b':
+        from src.models.fusion import create_fusion_b
+        return create_fusion_b(num_classes=num_classes)
+
+    elif exp_type == 'fusion_c':
+        from src.models.fusion import create_fusion_c
+        return create_fusion_c(num_classes=num_classes)
+
     else:
         raise ValueError(f"Unknown experiment type: {exp_type}")
 
@@ -284,11 +356,11 @@ def run_experiment(
         # Enable cuDNN auto-tuning for faster convolutions
         torch.backends.cudnn.benchmark = True
 
-        # Try cached scalograms first (fast path: ~30s load vs ~60min CWT)
+        # Import data utilities
         from src.data.boas_dataset import create_cached_dataloaders, create_boas_dataloaders
         from src.data.transforms import create_scalogram_transform
 
-        # Check for cache: memmap (.npy) or legacy (.pt)
+        # Check for scalogram cache
         has_cache = (
             cache_path.exists() and (
                 (cache_path / 'train_meta.json').exists() or
@@ -296,25 +368,68 @@ def run_experiment(
             )
         )
 
-        if has_cache:
-            train_loader, val_loader, test_loader = create_cached_dataloaders(
-                cache_dir=str(cache_path),
-                batch_size=batch_size,
-            )
-        else:
-            # Fallback: on-the-fly CWT (slow but works without precomputing)
-            print("  [WARN] No scalogram cache found. Using slow CWT path.")
-            print("  [HINT] Run: python precompute_scalograms.py --data-dir data/ds005555")
-            transform = create_scalogram_transform(
-                output_size=(224, 224), sampling_rate=100
-            )
+        # Determine data mode
+        data_mode = exp_config.get('data_mode', '2d')
+
+        # === Load data based on mode ===
+        if data_mode == '1d':
+            # 1D raw signal mode — no scalograms needed
+            print("  [DATA] Loading raw 1D EEG signals (no CWT)")
             train_loader, val_loader, test_loader = create_boas_dataloaders(
                 data_dir=str(boas_path),
                 batch_size=batch_size,
-                transform=transform,
+                transform=None,  # Raw signal: (6, 3000)
                 num_workers=4,
                 max_subjects=max_subjects,
             )
+        elif data_mode == 'both':
+            # Multi-modal: need both raw 1D AND 2D scalograms
+            print("  [DATA] Loading both raw 1D + 2D scalograms")
+            # 1D dataloaders
+            train_loader_1d, val_loader_1d, test_loader_1d = create_boas_dataloaders(
+                data_dir=str(boas_path),
+                batch_size=batch_size,
+                transform=None,
+                num_workers=4,
+                max_subjects=max_subjects,
+            )
+            # 2D dataloaders (scalograms)
+            if has_cache:
+                train_loader, val_loader, test_loader = create_cached_dataloaders(
+                    cache_dir=str(cache_path),
+                    batch_size=batch_size,
+                )
+            else:
+                transform = create_scalogram_transform(
+                    output_size=(224, 224), sampling_rate=100
+                )
+                train_loader, val_loader, test_loader = create_boas_dataloaders(
+                    data_dir=str(boas_path),
+                    batch_size=batch_size,
+                    transform=transform,
+                    num_workers=4,
+                    max_subjects=max_subjects,
+                )
+        else:
+            # Default 2D scalogram mode
+            if has_cache:
+                print("  [CACHE] Loading memory-mapped scalograms")
+                train_loader, val_loader, test_loader = create_cached_dataloaders(
+                    cache_dir=str(cache_path),
+                    batch_size=batch_size,
+                )
+            else:
+                print("  [WARN] No scalogram cache found. Using slow CWT path.")
+                transform = create_scalogram_transform(
+                    output_size=(224, 224), sampling_rate=100
+                )
+                train_loader, val_loader, test_loader = create_boas_dataloaders(
+                    data_dir=str(boas_path),
+                    batch_size=batch_size,
+                    transform=transform,
+                    num_workers=4,
+                    max_subjects=max_subjects,
+                )
 
         # Create model
         model = create_model(exp_config, num_classes=num_classes)
@@ -458,7 +573,7 @@ def main():
     print("=" * 70)
     print("  EEG SLEEP STAGING PIPELINE")
     print("  Dataset: BOAS ds005555 (W/N1/N2/N3/REM)")
-    print("  Models: SNN (4) + Transformer (3) + CNN (2) + Quantum (14) = 23")
+    print("  Models: Phase1(23) + SNN-1D(3) + Q-1D(14) + Fusion(3) = 43")
     print("=" * 70)
     print(f"  Epochs:       {args.epochs}")
     print(f"  Batch Size:   {args.batch_size}")

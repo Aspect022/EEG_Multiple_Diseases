@@ -15,6 +15,11 @@ from .quantum_circuit import (
     ENTANGLEMENT_MAP,
 )
 
+from .quantum_1d import (
+    Quantum1DEEG,
+    create_quantum_1d,
+)
+
 __all__ = [
     'EfficientHybridCNN',
     'create_hybrid_quantum_cnn',
@@ -25,4 +30,7 @@ __all__ = [
     'VALID_ENTANGLEMENTS',
     'ROTATION_MAP',
     'ENTANGLEMENT_MAP',
+    'Quantum1DEEG',
+    'create_quantum_1d',
 ]
+
