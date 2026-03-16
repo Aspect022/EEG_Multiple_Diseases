@@ -437,6 +437,27 @@ def run_experiment(
         # Note: torch.compile disabled — hangs on SNN/quantum dynamic graphs
         # The A100 with AMP is fast enough without it
 
+        # --- Compute class weights (inverse frequency) for imbalanced data ---
+        # Sleep staging is heavily imbalanced: N2 ~ 60%. Without weighting,
+        # models (especially from-scratch SNN/quantum) collapse to majority class.
+        class_weights = None
+        try:
+            ds = train_loader.dataset
+            if hasattr(ds, 'labels'):
+                labels = ds.labels
+                if hasattr(labels, 'numpy'):
+                    labels = labels.numpy()
+                unique, counts = np.unique(labels, return_counts=True)
+                # Inverse frequency: rare classes get higher weight
+                freq = counts / counts.sum()
+                weights = 1.0 / (freq * num_classes)
+                # Normalize so mean weight = 1
+                weights = weights / weights.mean()
+                class_weights = torch.tensor(weights, dtype=torch.float32)
+                print(f"  [WEIGHTS] Class weights: {dict(zip(unique.tolist(), [f'{w:.2f}' for w in weights]))}")
+        except Exception as e:
+            print(f"  [WEIGHTS] Could not compute class weights: {e}")
+
         # Training config
         config = ResearchConfig(
             experiment_name=exp_key,
@@ -448,7 +469,7 @@ def run_experiment(
             mixed_precision=True,
             gradient_accumulation_steps=4,
             early_stopping=True,
-            patience=5,
+            patience=10,
             save_best=True,
             seed=42,
         )
@@ -460,6 +481,7 @@ def run_experiment(
             train_loader=train_loader,
             val_loader=val_loader,
             fold=0,
+            class_weights=class_weights,
         )
 
         metrics = trainer.fit()
