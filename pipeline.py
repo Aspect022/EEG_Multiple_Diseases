@@ -430,7 +430,7 @@ def generate_summary(results: List[Dict], output_dir: str):
             dur = r.get('duration_seconds', 0)
             lines.append(f"| {i} | {name} | {acc:.4f} | {f1:.4f} | {mcc:.4f} | {kappa:.4f} | {dur:.0f}s |")
 
-    with open(md_path, 'w') as f:
+    with open(md_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(lines))
 
     print(f"\nSummary saved to {summary_path}")
