@@ -68,7 +68,10 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  STEP 3/3: Fusion Models (3 models)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-python pipeline.py $COMMON --models fusion_a,fusion_b,fusion_c
+# NOTE: fusion_c (Multi-Modal) is excluded — it requires dual inputs
+# (raw_signal + scalogram) which needs a custom training loop.
+# We'll implement that separately.
+python pipeline.py $COMMON --models fusion_a,fusion_b
 
 # ==========================================================================
 # Git Push Results

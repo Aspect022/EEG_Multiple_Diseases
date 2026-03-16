@@ -93,16 +93,17 @@ class FusionB(nn.Module):
     
     def _extract_quantum_features(self, x: torch.Tensor) -> torch.Tensor:
         """Extract intermediate quantum features (before classifier)."""
-        # Run through quantum model's feature extractor
+        # Run through quantum model's encoder → pre_quantum → circuit → measurement
         model = self.quantum
-        features = model.feature_extractor(x)
-        flat = features.view(features.size(0), -1)
-        compressed = model.feature_reduction(flat)
-        angles = torch.sigmoid(compressed) * 3.14159
+        batch_size = x.shape[0]
+        features = model.encoder(x)                          # (B, 128, 2, 2)
+        flat = features.view(batch_size, -1)                  # (B, 512)
+        angles = model.pre_quantum(flat)                      # (B, n_qubits)
+        angles = torch.tanh(angles) * 3.14159                 # [-π, π]
         
-        quantum_state = model.quantum_circuit(angles)
-        quantum_features = model.measurement(quantum_state)
-        return quantum_features  # (batch, 8)
+        quantum_state = model.circuit(angles)                  # (B, 2^n_qubits)
+        quantum_features = model.measurement(quantum_state)    # (B, n_qubits)
+        return quantum_features.float()  # (batch, 8)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
