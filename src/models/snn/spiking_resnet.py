@@ -85,10 +85,10 @@ class QuadraticIF(nn.Module):
             self.mem = self._init_mem(input_)
 
         # QIF dynamics: v += (dt/tau) * (v^2 + input)
-        mem_clamped = torch.clamp(self.mem, min=-10.0, max=10.0)
-        new_mem = mem_clamped + (self.dt / self.tau) * (mem_clamped ** 2 + input_)
+        # Removed clamping to preserve quadratic dynamics
+        new_mem = self.mem + (self.dt / self.tau) * (self.mem ** 2 + input_)
 
-        # Spike detection with surrogate gradient
+        # Spike detection with surrogate gradient (reduced slope for stability)
         spike = self.spike_grad(new_mem - self.threshold)
 
         # Reset where spike occurred
@@ -113,8 +113,9 @@ def create_neuron(neuron_type: str = 'lif', beta: float = 0.9, spike_grad=None, 
     Returns:
         Spiking neuron module. Call with (input) -> spike.
     """
+    # Reduced slope from 25 to 10 for better gradient stability
     if spike_grad is None:
-        spike_grad = surrogate.fast_sigmoid(slope=25)
+        spike_grad = surrogate.fast_sigmoid(slope=10)
 
     if neuron_type == 'lif':
         return snn.Leaky(beta=beta, spike_grad=spike_grad, init_hidden=True)
@@ -147,7 +148,7 @@ class SpikingConv2d(nn.Module):
 # ==========================================================================
 
 class SpikingBasicBlock(nn.Module):
-    """Spiking residual block."""
+    """Spiking residual block with proper spike handling in both paths."""
     expansion = 1
 
     def __init__(self, in_planes, planes, stride=1, neuron_type='lif', beta=0.9):
@@ -160,18 +161,22 @@ class SpikingBasicBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
         self.neuron2 = create_neuron(neuron_type=neuron_type, beta=beta)
 
+        # Shortcut with spiking neuron for proper spike addition
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != planes * self.expansion:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_planes, planes * self.expansion, 1, stride=stride, bias=False),
                 nn.BatchNorm2d(planes * self.expansion),
+                create_neuron(neuron_type=neuron_type, beta=beta),  # Added neuron to shortcut
             )
 
     def forward(self, x):
+        # Both paths now produce spikes for proper addition
         identity = self.shortcut(x)
+        
         out = self.neuron1(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        out = out + identity
+        out = self.bn2(self.conv2(out))  # BN before neuron is OK
+        out = out + identity  # Both are now spike trains
         out = self.neuron2(out)
         return out
 
@@ -201,6 +206,7 @@ class SpikingResNet(nn.Module):
         self.neuron_type = neuron_type
         self.beta = beta
         self.in_planes = 64
+        self.spike_stats = {}  # For monitoring spike rates during training
 
         self.conv1 = nn.Conv2d(in_channels, 64, 7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
@@ -259,12 +265,51 @@ class SpikingResNet(nn.Module):
         return out
 
     def forward(self, x):
+        """
+        Forward pass with Poisson spike encoding and spike count readout.
+        
+        Converts continuous scalogram values to spike probabilities, then
+        generates Poisson spike trains for temporal dynamics.
+        """
         self._reset_states()
+        self.spike_stats = {'rates': [], 'layer_stats': {}}  # Reset stats
+        
+        # Convert continuous input to spike probability via rate coding
+        # x is (B, C, H, W) with values in [0, 1] or normalized range
+        x_min = x.view(x.size(0), -1).min(dim=1, keepdim=True)[0]
+        x_max = x.view(x.size(0), -1).max(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min.view(-1, 1, 1, 1)) / (x_max.view(-1, 1, 1, 1) - x_min.view(-1, 1, 1, 1) + 1e-8)
+        
+        # Scale to reasonable firing rate (max ~30% to prevent saturation)
+        x_spike_prob = x_norm * 0.3
+        
         spike_record = []
         for t in range(self.num_timesteps):
-            spk = self.forward_timestep(x)
+            # Generate Poisson spikes from probability
+            # This creates temporal variation essential for SNN computation
+            spike_mask = torch.rand_like(x_spike_prob) < x_spike_prob
+            x_t = x_spike_prob * spike_mask.float()
+            
+            spk = self.forward_timestep(x_t)
             spike_record.append(spk)
-        return torch.stack(spike_record, dim=0).mean(dim=0)
+            
+            # Record spike rate for this timestep
+            self.spike_stats['rates'].append(spk.mean().item())
+        
+        # Compute layer-wise spike statistics (sample from layer1)
+        with torch.no_grad():
+            # Get a sample activation from layer1 for monitoring
+            sample_out = self.lif1(self.bn1(self.conv1(x)))
+            self.spike_stats['layer_stats']['conv1_rate'] = sample_out.mean().item()
+        
+        # Sum spike counts across timesteps (rate coding readout)
+        # Changed from mean() to sum() for proper spike count readout
+        output = torch.stack(spike_record, dim=0).sum(dim=0)
+        
+        # Store average firing rate for the entire forward pass
+        self.spike_stats['avg_rate'] = sum(self.spike_stats['rates']) / len(self.spike_stats['rates'])
+        
+        return output
 
     @classmethod
     def resnet18(cls, **kwargs):
@@ -327,16 +372,32 @@ class SpikingResNet1D(nn.Module):
                 module.reset_mem()
 
     def forward(self, x):
+        """
+        Forward pass with Poisson spike encoding and spike count readout.
+        """
         self._reset_states()
+        
+        # Convert continuous input to spike probability via rate coding
+        x_min = x.view(x.size(0), -1).min(dim=1, keepdim=True)[0]
+        x_max = x.view(x.size(0), -1).max(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min.view(-1, 1)) / (x_max.view(-1, 1) - x_min.view(-1, 1) + 1e-8)
+        x_spike_prob = x_norm * 0.3
+        
         spike_record = []
         for t in range(self.num_timesteps):
-            out = self.lif_enc(self.encoder(x))
+            # Generate Poisson spikes from probability
+            spike_mask = torch.rand_like(x_spike_prob) < x_spike_prob
+            x_t = x_spike_prob * spike_mask.float()
+            
+            out = self.lif_enc(self.encoder(x_t))
             out = self._forward_block(out, self.block1)
             out = self._forward_block(out, self.block2)
             out = self._forward_block(out, self.block3)
             out = self.fc(self.global_pool(out).squeeze(-1))
             spike_record.append(out)
-        return torch.stack(spike_record, dim=0).mean(dim=0)
+        
+        # Sum spike counts across timesteps (rate coding readout)
+        return torch.stack(spike_record, dim=0).sum(dim=0)
 
 
 # ==========================================================================

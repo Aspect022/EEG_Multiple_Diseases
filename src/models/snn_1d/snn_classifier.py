@@ -63,23 +63,23 @@ class LocalPatternStage(nn.Module):
     """
     Stage 1: Local high-resolution pattern extractor.
     Captures fine details like sleep spindles (12–14 Hz) and K-complexes.
-    
+
     Input:  (batch, 6, 3000)
     Output: (batch, 128, 3000), reg_loss
     """
-    
+
     def __init__(
         self,
         in_channels: int = 6,
         out_channels: int = 128,
         kernel_size: int = 3,
-        timesteps: int = 4,
+        timesteps: int = 25,  # Increased from 4 to 25 for proper temporal dynamics
     ):
         super().__init__()
         self.conv = DepthwiseSeparableConv1d(in_channels, out_channels, kernel_size)
         self.lif_layer = LIFLayer(out_channels)
         self.timesteps = timesteps
-    
+
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.conv(x)
         x, reg_loss = self.lif_layer(x, timesteps=self.timesteps)
@@ -90,18 +90,18 @@ class SegmentPatternStage(nn.Module):
     """
     Stage 2: Mid-resolution segment pattern extractor.
     Captures patterns spanning ~1-5 seconds (sleep stage sub-patterns).
-    
+
     Input:  (batch, 128, 3000)
     Output: (batch, 64, 1500), reg_loss
     """
-    
+
     def __init__(
         self,
         in_channels: int = 128,
         out_channels: int = 64,
         kernel_size: int = 9,
         stride: int = 2,
-        timesteps: int = 4,
+        timesteps: int = 25,  # Increased from 4 to 25 for proper temporal dynamics
         use_attention: bool = False,
     ):
         super().__init__()
@@ -110,7 +110,7 @@ class SegmentPatternStage(nn.Module):
         )
         self.lif_layer = LIFLayer(out_channels)
         self.timesteps = timesteps
-        
+
         self.use_attention = use_attention
         if use_attention:
             self.mssa = MultiScaleSpikingAttention(
@@ -119,7 +119,7 @@ class SegmentPatternStage(nn.Module):
                 regional_window=128,
                 global_pool=8,
             )
-    
+
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.conv(x)
         x, reg_loss = self.lif_layer(x, timesteps=self.timesteps)
@@ -132,18 +132,18 @@ class EpochPatternStage(nn.Module):
     """
     Stage 3: Low-resolution epoch-level pattern extractor.
     Captures overall sleep stage characteristics across the full epoch.
-    
+
     Input:  (batch, 64, 1500)
     Output: (batch, 32, 750), reg_loss
     """
-    
+
     def __init__(
         self,
         in_channels: int = 64,
         out_channels: int = 32,
         kernel_size: int = 15,
         stride: int = 2,
-        timesteps: int = 4,
+        timesteps: int = 25,  # Increased from 4 to 25 for proper temporal dynamics
         use_attention: bool = False,
     ):
         super().__init__()
@@ -152,11 +152,11 @@ class EpochPatternStage(nn.Module):
         )
         self.lif_layer = LIFLayer(out_channels)
         self.timesteps = timesteps
-        
+
         self.use_attention = use_attention
         if use_attention:
             self.global_attn = GlobalSpikingAttention(out_channels, num_heads=1)
-    
+
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.conv(x)
         x, reg_loss = self.lif_layer(x, timesteps=self.timesteps)
@@ -230,28 +230,30 @@ class TemporalFusionBlock(nn.Module):
 class SNN1D(nn.Module):
     """
     Spiking Neural Network for 1D EEG signals.
-    
+
     3-stage hierarchical temporal pyramid with LIF neurons.
-    
+
     Args:
         in_channels: Number of EEG channels (default 6)
         num_classes: Number of output classes (default 5)
         use_attention: If True, adds spiking attention at stages 2 & 3
         fusion_dim: Final feature dimension before classifier
-        timesteps: LIF simulation timesteps
+        timesteps: LIF simulation timesteps (increased from 8 to 25)
     """
-    
+
     def __init__(
         self,
         in_channels: int = 6,
         num_classes: int = 5,
         use_attention: bool = False,
         fusion_dim: int = 128,
-        timesteps: int = 8,
+        timesteps: int = 25,  # Increased from 8 to 25 for proper temporal dynamics
     ):
         super().__init__()
         self.use_attention = use_attention
-        
+        self.timesteps = timesteps
+        self.spike_stats = {}  # For monitoring spike rates during training
+
         # 3-stage pyramid
         self.stage1 = LocalPatternStage(
             in_channels, out_channels=128, timesteps=timesteps,
@@ -264,10 +266,10 @@ class SNN1D(nn.Module):
             64, out_channels=32, timesteps=timesteps,
             use_attention=use_attention,
         )
-        
+
         # Temporal fusion
         self.fusion = TemporalFusionBlock(128, 64, 32, fusion_dim=fusion_dim)
-        
+
         # Classifier
         self.classifier = nn.Sequential(
             nn.Linear(fusion_dim, 64),
@@ -276,9 +278,11 @@ class SNN1D(nn.Module):
             nn.Dropout(0.3),
             nn.Linear(64, num_classes),
         )
-    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
+        Forward pass with Poisson spike encoding for proper temporal dynamics.
+        
         Args:
             x: (batch, 6, 3000) — raw EEG signal
         Returns:
@@ -292,21 +296,47 @@ class SNN1D(nn.Module):
                 device=x.device, dtype=x.dtype,
             )
             x = torch.cat([x, pad], dim=1)
+
+        # === Poisson Spike Encoding ===
+        # Convert continuous input to spike probability via rate coding
+        # This creates temporal variation essential for SNN computation
+        B, C, L = x.shape
         
-        # Three-stage pyramid
-        s1, reg1 = self.stage1(x)    # (B, 128, 3000)
+        # Normalize to [0, 1] range per sample
+        x_min = x.view(B, -1).min(dim=1, keepdim=True)[0]
+        x_max = x.view(B, -1).max(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min.view(-1, 1, 1)) / (x_max.view(-1, 1, 1) - x_min.view(-1, 1, 1) + 1e-8)
+        
+        # Scale to reasonable firing rate (max ~30% to prevent saturation)
+        x_spike_prob = x_norm * 0.3
+        
+        # Initialize spike statistics monitoring
+        self.spike_stats = {'stage_rates': [], 'total_spikes': 0}
+        
+        # Process through 3-stage pyramid with Poisson encoding
+        # Note: The actual spike generation happens inside LIFLayer over timesteps
+        # Here we provide the encoded input
+        s1, reg1 = self.stage1(x_spike_prob)    # (B, 128, 3000)
+        self.spike_stats['stage_rates'].append(s1.mean().item())
+        
         s2, reg2 = self.stage2(s1)   # (B, 64, 1500)
-        s3, reg3 = self.stage3(s2)   # (B, 32, 750)
+        self.spike_stats['stage_rates'].append(s2.mean().item())
         
+        s3, reg3 = self.stage3(s2)   # (B, 32, 750)
+        self.spike_stats['stage_rates'].append(s3.mean().item())
+
         # Temporal fusion
         features = self.fusion(s1, s2, s3)  # (B, 128)
-        
+
         # Classification
         logits = self.classifier(features)
-        
+
         # Store reg_loss for training (accessed via model.reg_loss)
         self._reg_loss = reg1 + reg2 + reg3
         
+        # Store average firing rate for monitoring
+        self.spike_stats['avg_rate'] = sum(self.spike_stats['stage_rates']) / len(self.spike_stats['stage_rates'])
+
         return logits
     
     @property

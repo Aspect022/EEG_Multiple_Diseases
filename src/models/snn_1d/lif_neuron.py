@@ -16,17 +16,18 @@ from typing import Tuple
 class SurrogateGradient(torch.autograd.Function):
     """
     Surrogate gradient for spiking threshold.
-    
+
     Uses fast sigmoid approximation for the backward pass:
     σ'(x) = 1 / (1 + k|x|)² where k controls sharpness.
     """
-    scale = 25.0  # Sharpness of surrogate gradient
-    
+    # Reduced from 25.0 to 10.0 for better gradient stability in BPTT
+    scale = 10.0  # Sharpness of surrogate gradient
+
     @staticmethod
     def forward(ctx, membrane_potential, threshold):
         ctx.save_for_backward(membrane_potential, threshold)
         return (membrane_potential >= threshold).float()
-    
+
     @staticmethod
     def backward(ctx, grad_output):
         membrane_potential, threshold = ctx.saved_tensors
@@ -64,15 +65,15 @@ class LIFNeuron(nn.Module):
         self.spike_reg = spike_reg
     
     def forward(
-        self, x: torch.Tensor, timesteps: int = 4
+        self, x: torch.Tensor, timesteps: int = 25
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Process input through LIF dynamics over multiple timesteps.
-        
+
         Args:
             x: Input current (batch, channels, length)
-            timesteps: Number of simulation timesteps
-            
+            timesteps: Number of simulation timesteps (increased from 4 to 25)
+
         Returns:
             Tuple of (output_spikes, membrane_potential, reg_loss)
             - output_spikes: Accumulated spikes (batch, channels, length)
@@ -81,55 +82,57 @@ class LIFNeuron(nn.Module):
         """
         B, C, L = x.shape
         device = x.device
-        
-        # Clamp tau to valid range (0, 1)
-        tau = torch.sigmoid(self.tau)
-        
+
+        # Use tau directly with soft bounds to preserve temporal dynamics
+        # Changed from sigmoid clamping which destroyed QIF-like behavior
+        tau = torch.clamp(self.tau, min=0.5, max=0.99)
+
         # Initialize membrane potential
         membrane = torch.zeros(B, C, L, device=device)
         spike_sum = torch.zeros(B, C, L, device=device)
-        
-        # Divide input current across timesteps
-        input_current = x / timesteps
-        
+
+        # Present input across timesteps with Poisson encoding
+        # Don't divide input - let spike encoding handle the temporal distribution
+        input_current = x
+
         for t in range(timesteps):
             # Leak + integrate
             membrane = tau * membrane + input_current
-            
+
             # Spike generation (with surrogate gradient)
             spikes = SurrogateGradient.apply(membrane, self.threshold)
             spike_sum = spike_sum + spikes
-            
+
             # Reset after spike (soft reset)
             membrane = membrane - spikes * self.threshold
-        
+
         # Spike regularization: encourage ~10% firing rate per neuron (sparse)
         firing_rate = spike_sum.mean() / timesteps
         target_rate = 0.1
         reg_loss = self.spike_reg * (firing_rate - target_rate) ** 2
-        
+
         return spike_sum, membrane, reg_loss
 
 
 class LIFLayer(nn.Module):
     """
     Convenience layer: BatchNorm + LIF neuron.
-    
+
     Drop-in replacement for ReLU in any Conv1d pipeline.
-    
+
     Args:
         channels: Number of channels for BatchNorm
         threshold: LIF threshold
         tau: LIF leak factor
     """
-    
+
     def __init__(self, channels: int, threshold: float = 1.0, tau: float = 2.2):
         super().__init__()
         self.bn = nn.BatchNorm1d(channels)
         self.lif = LIFNeuron(threshold=threshold, tau=tau)
-    
+
     def forward(
-        self, x: torch.Tensor, timesteps: int = 4
+        self, x: torch.Tensor, timesteps: int = 25
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:

@@ -158,17 +158,41 @@ class SpikingVisionTransformer(nn.Module):
                 module.reset_mem()
 
     def forward_timestep(self, x):
-        x = self.patch_embed(x) + self.pos_embed
+        # Add positional embedding before spiking (not to spikes)
+        x = self.patch_embed(x)
+        # Positional embedding added to continuous patch embeddings, then spike
+        x = x + self.pos_embed
         x = self.blocks(x)
         x = self.norm(x).mean(dim=1)
         return self.head(x)
 
     def forward(self, x):
+        """
+        Forward pass with Poisson spike encoding and spike count readout.
+        """
         self._reset_states()
+        
+        # Convert continuous input to spike probability via rate coding
+        B, C, H, W = x.shape
+        x_min = x.view(B, -1).min(dim=1, keepdim=True)[0]
+        x_max = x.view(B, -1).max(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min.view(-1, 1, 1, 1)) / (x_max.view(-1, 1, 1, 1) - x_min.view(-1, 1, 1, 1) + 1e-8)
+        
+        # Scale to reasonable firing rate (max ~30% to prevent saturation)
+        x_spike_prob = x_norm * 0.3
+        
         spike_record = []
         for t in range(self.num_timesteps):
-            spike_record.append(self.forward_timestep(x))
-        return torch.stack(spike_record, dim=0).mean(dim=0)
+            # Generate Poisson spikes from probability
+            # This creates temporal variation essential for SNN computation
+            spike_mask = torch.rand_like(x_spike_prob) < x_spike_prob
+            x_t = x_spike_prob * spike_mask.float()
+            
+            spike_record.append(self.forward_timestep(x_t))
+        
+        # Sum spike counts across timesteps (rate coding readout)
+        # Changed from mean() to sum() for proper spike count readout
+        return torch.stack(spike_record, dim=0).sum(dim=0)
 
 
 def create_spiking_vit(num_classes=5, num_timesteps=25, neuron_type='lif',

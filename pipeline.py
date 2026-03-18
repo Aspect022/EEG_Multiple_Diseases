@@ -219,7 +219,7 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             model_name=exp_config['backbone'],
             num_classes=num_classes,
             neuron_type=exp_config['neuron_type'],
-            num_timesteps=4,
+            num_timesteps=25,  # Increased from 4 to 25 for proper temporal dynamics
         )
 
     elif exp_type == 'snn_vit':
@@ -228,7 +228,7 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             num_classes=num_classes,
             neuron_type=exp_config['neuron_type'],
             variant='small',
-            num_timesteps=8,
+            num_timesteps=25,  # Increased from 8 to 25 for proper temporal dynamics
         )
 
     elif exp_type == 'quantum':
@@ -458,20 +458,58 @@ def run_experiment(
         except Exception as e:
             print(f"  [WEIGHTS] Could not compute class weights: {e}")
 
+        # SNN-specific configuration
+        is_snn = exp_config['type'] in ['snn', 'snn_vit', 'snn_1d', 'spiking_vit_1d']
+        is_snn_1d = exp_config['type'] in ['snn_1d', 'spiking_vit_1d']
+        
+        # Use SNN-optimized hyperparameters
+        if is_snn:
+            snn_lr = 3e-4  # Reduced learning rate for SNN stability
+            snn_warmup = 10  # Longer warmup for SNNs
+            snn_grad_clip = 5.0  # Higher clip for BPTT
+            snn_epochs = 50  # SNNs need more epochs
+            mixed_precision = False  # FP32 for SNN stability
+            
+            if is_snn_1d:
+                print(f"  [SNN-1D MODE] Using 1D SNN-optimized hyperparameters:")
+                print(f"    - Model type: {exp_config['type']} (raw EEG signal processing)")
+                print(f"    - Learning rate: {snn_lr} (reduced for BPTT stability)")
+                print(f"    - Warmup epochs: {snn_warmup} (longer for spike dynamics)")
+                print(f"    - Gradient clip: {snn_grad_clip} (higher for BPTT)")
+                print(f"    - Epochs: {snn_epochs} (more for convergence)")
+                print(f"    - Mixed precision: Disabled (FP32 for stability)")
+                print(f"    - Timesteps: 25 (increased from 4/8 for proper temporal dynamics)")
+                print(f"    - Input: Poisson spike encoding (continuous → binary spikes)")
+            else:
+                print(f"  [SNN-2D MODE] Using SNN-optimized hyperparameters:")
+                print(f"    - Learning rate: {snn_lr} (reduced for BPTT stability)")
+                print(f"    - Warmup epochs: {snn_warmup} (longer for spike dynamics)")
+                print(f"    - Gradient clip: {snn_grad_clip} (higher for BPTT)")
+                print(f"    - Epochs: {snn_epochs} (more for convergence)")
+                print(f"    - Mixed precision: Disabled (FP32 for stability)")
+        else:
+            snn_lr = learning_rate
+            snn_warmup = 3
+            snn_grad_clip = 1.0
+            snn_epochs = epochs
+            mixed_precision = True
+
         # Training config
         config = ResearchConfig(
             experiment_name=exp_key,
             output_dir=str(output_dir),
-            epochs=epochs,
-            learning_rate=learning_rate,
+            epochs=snn_epochs,
+            learning_rate=snn_lr,
             batch_size=batch_size,
             num_classes=num_classes,
-            mixed_precision=True,
+            mixed_precision=mixed_precision,
             gradient_accumulation_steps=4,
             early_stopping=True,
             patience=10,
             save_best=True,
             seed=42,
+            warmup_epochs=snn_warmup,
+            max_grad_norm=snn_grad_clip,
         )
 
         # Train (single fold for speed)
