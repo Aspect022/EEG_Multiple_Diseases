@@ -130,6 +130,28 @@ EXPERIMENT_DEFS['fusion_c'] = {
     'name': 'Fusion-MultiModal', 'data_mode': 'both',
 }
 
+# New SNN fusion experiments (1D + 2D)
+EXPERIMENT_DEFS['snn_fusion_early'] = {
+    'type': 'snn_fusion_early',
+    'name': 'SNN-EarlyFusion-1D+2D',
+    'data_mode': 'both',
+    'dim_1d': 128,
+    'dim_2d': 512,
+    'fusion_dim': 256,
+}
+EXPERIMENT_DEFS['snn_fusion_late'] = {
+    'type': 'snn_fusion_late',
+    'name': 'SNN-LateFusion-Ensemble',
+    'data_mode': 'both',
+}
+EXPERIMENT_DEFS['snn_fusion_gated'] = {
+    'type': 'snn_fusion_gated',
+    'name': 'SNN-GatedFusion-Adaptive',
+    'data_mode': 'both',
+    'confidence_threshold': 0.7,
+    'gate_type': 'adaptive',
+}
+
 
 # =========================================================================
 # Dataset Download & Verification
@@ -306,6 +328,29 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
     elif exp_type == 'fusion_c':
         from src.models.fusion import create_fusion_c
         return create_fusion_c(num_classes=num_classes)
+    
+    elif exp_type == 'snn_fusion_early':
+        from src.models.fusion import create_early_fusion
+        return create_early_fusion(
+            num_classes=num_classes,
+            dim_1d=exp_config.get('dim_1d', 128),
+            dim_2d=exp_config.get('dim_2d', 512),
+            fusion_dim=exp_config.get('fusion_dim', 256),
+        )
+    
+    elif exp_type == 'snn_fusion_late':
+        from src.models.fusion import create_late_fusion
+        return create_late_fusion(num_classes=num_classes)
+    
+    elif exp_type == 'snn_fusion_gated':
+        from src.models.fusion import create_gated_fusion
+        return create_gated_fusion(
+            num_classes=num_classes,
+            dim_1d=128,
+            dim_2d=512,
+            confidence_threshold=exp_config.get('confidence_threshold', 0.7),
+            gate_type=exp_config.get('gate_type', 'adaptive'),
+        )
 
     else:
         raise ValueError(f"Unknown experiment type: {exp_type}")

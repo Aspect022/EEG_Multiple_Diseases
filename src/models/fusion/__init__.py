@@ -1,18 +1,25 @@
-"""Fusion model architectures for EEG sleep staging."""
+"""
+Fusion Models for Multi-Modal Sleep Staging.
 
-from .gated_fusion import GatedFusionModule, MultiStreamFusion, ClassificationHead
-from .fusion_a import FusionA, create_fusion_a
-from .fusion_b import FusionB, create_fusion_b
-from .fusion_c import FusionC, create_fusion_c
+Combines 1D raw EEG signals with 2D scalogram representations.
+"""
+
+from .fusion_models import (
+    EarlyFusionNetwork,
+    LateFusionNetwork,
+    GatedFusionNetwork,
+    MultiModalFeatureExtractor,
+    create_early_fusion,
+    create_late_fusion,
+    create_gated_fusion,
+)
 
 __all__ = [
-    'GatedFusionModule',
-    'MultiStreamFusion',
-    'ClassificationHead',
-    'FusionA',
-    'FusionB',
-    'FusionC',
-    'create_fusion_a',
-    'create_fusion_b',
-    'create_fusion_c',
+    'EarlyFusionNetwork',
+    'LateFusionNetwork',
+    'GatedFusionNetwork',
+    'MultiModalFeatureExtractor',
+    'create_early_fusion',
+    'create_late_fusion',
+    'create_gated_fusion',
 ]
