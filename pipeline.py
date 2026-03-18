@@ -695,6 +695,10 @@ def generate_summary(results: List[Dict], output_dir: str):
     ]
 
     for i, r in enumerate(results, 1):
+        if r is None:
+            lines.append(f"| {i} | Experiment {i} | ERROR (None result) | — | — | — | — |")
+            continue
+        
         name = r.get('name', r.get('experiment', '?'))
         if 'error' in r:
             lines.append(f"| {i} | {name} | ERROR | — | — | — | {r.get('duration_seconds', 0):.0f}s |")
