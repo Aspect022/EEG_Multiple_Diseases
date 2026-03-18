@@ -214,13 +214,13 @@ def run_experiment(exp_config: Dict, args: argparse.Namespace) -> bool:
     
     cmd = [
         sys.executable, "pipeline.py",
-        "--experiment", exp_config["name"],
+        "--models", exp_config["name"],
         "--data-dir", Config.DATA_DIR,
         "--output-dir", Config.OUTPUT_DIR,
         "--epochs", str(Config.EPOCHS),
         "--batch-size", str(Config.BATCH_SIZE),
-        "--num-workers", str(Config.NUM_WORKERS),
-        "--learning-rate", str(Config.LEARNING_RATE),
+        "--lr", str(Config.LEARNING_RATE),
+        "--skip-download",
     ]
     
     if args.dry_run:
