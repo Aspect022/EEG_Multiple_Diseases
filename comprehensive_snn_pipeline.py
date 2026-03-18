@@ -36,10 +36,11 @@ from typing import List, Dict
 class Config:
     """Training configuration."""
     
-    # Paths (UPDATE THESE!)
-    DATA_DIR = "/path/to/datasets/BOAS"
-    OUTPUT_DIR = "./outputs"
+    # Paths (from run.sh - properly configured)
+    DATA_DIR = "./data"
+    OUTPUT_DIR = "./outputs/results"
     LOG_DIR = "./logs"
+    CACHE_DIR = "./data/ds005555_cache"  # Precomputed scalograms
     
     # A100 Optimization
     CUDA_VISIBLE_DEVICES = "0"
