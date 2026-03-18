@@ -1,4 +1,4 @@
-﻿"""
+"""
 Research-Grade Training Utilities for ECG Classification.
 
 Provides a 5-fold cross-validation training loop with:
@@ -363,11 +363,23 @@ class FoldTrainer:
                 with autocast('cuda'):
                     outputs = self.model(inputs)
                     loss = self.criterion(outputs, targets)
+                    
+                    if hasattr(self.model, 'reg_loss'):
+                        reg = self.model.reg_loss
+                        if isinstance(reg, torch.Tensor) and reg.requires_grad:
+                            loss = loss + reg
+                            
                     loss = loss / self.config.gradient_accumulation_steps
                 self.scaler.scale(loss).backward()
             else:
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
+                
+                if hasattr(self.model, 'reg_loss'):
+                    reg = self.model.reg_loss
+                    if isinstance(reg, torch.Tensor) and reg.requires_grad:
+                        loss = loss + reg
+                        
                 loss = loss / self.config.gradient_accumulation_steps
                 loss.backward()
 

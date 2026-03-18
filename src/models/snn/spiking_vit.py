@@ -149,7 +149,6 @@ class SpikingVisionTransformer(nn.Module):
 
         self.norm = nn.LayerNorm(embed_dim)
         self.head = nn.Linear(embed_dim, num_classes)
-        self.head_neuron = create_neuron(neuron_type=neuron_type, beta=beta)
 
     def _reset_states(self):
         for module in self.modules():
@@ -162,7 +161,7 @@ class SpikingVisionTransformer(nn.Module):
         x = self.patch_embed(x) + self.pos_embed
         x = self.blocks(x)
         x = self.norm(x).mean(dim=1)
-        return self.head_neuron(self.head(x))
+        return self.head(x)
 
     def forward(self, x):
         self._reset_states()

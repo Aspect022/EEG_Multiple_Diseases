@@ -73,7 +73,7 @@ class FusionB(nn.Module):
             entanglement_type='ring',
             rotation_type='RXY',
             n_qubits=8,
-            n_layers=3,
+            n_qlayers=3,
         )
         # We'll extract the intermediate features, not final logits
         quantum_feature_dim = 8  # n_qubits measurement output

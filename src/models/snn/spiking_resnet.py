@@ -214,7 +214,6 @@ class SpikingResNet(nn.Module):
 
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
-        self.lif_out = create_neuron(neuron_type=neuron_type, beta=beta)
 
         self._initialize_weights()
 
@@ -256,7 +255,7 @@ class SpikingResNet(nn.Module):
         out = self.layer4(out)
         out = self.avgpool(out)
         out = torch.flatten(out, 1)
-        out = self.lif_out(self.fc(out))
+        out = self.fc(out)
         return out
 
     def forward(self, x):
@@ -300,7 +299,6 @@ class SpikingResNet1D(nn.Module):
 
         self.global_pool = nn.AdaptiveAvgPool1d(1)
         self.fc = nn.Linear(512, num_classes)
-        self.lif_out = create_neuron(neuron_type=neuron_type, beta=beta)
 
     def _make_block(self, in_ch, out_ch, neuron_type, beta):
         return nn.ModuleDict({
@@ -336,7 +334,7 @@ class SpikingResNet1D(nn.Module):
             out = self._forward_block(out, self.block1)
             out = self._forward_block(out, self.block2)
             out = self._forward_block(out, self.block3)
-            out = self.lif_out(self.fc(self.global_pool(out).squeeze(-1)))
+            out = self.fc(self.global_pool(out).squeeze(-1))
             spike_record.append(out)
         return torch.stack(spike_record, dim=0).mean(dim=0)
 

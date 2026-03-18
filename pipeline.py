@@ -219,7 +219,7 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             model_name=exp_config['backbone'],
             num_classes=num_classes,
             neuron_type=exp_config['neuron_type'],
-            num_timesteps=10,
+            num_timesteps=4,
         )
 
     elif exp_type == 'snn_vit':
@@ -228,7 +228,7 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             num_classes=num_classes,
             neuron_type=exp_config['neuron_type'],
             variant='small',
-            num_timesteps=10,
+            num_timesteps=8,
         )
 
     elif exp_type == 'quantum':
@@ -475,14 +475,27 @@ def run_experiment(
         )
 
         # Train (single fold for speed)
-        trainer = FoldTrainer(
-            model=model,
-            config=config,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            fold=0,
-            class_weights=class_weights,
-        )
+        if data_mode == 'both':
+            from src.training.multimodal_trainer import MultiModalFoldTrainer
+            trainer = MultiModalFoldTrainer(
+                model=model,
+                config=config,
+                train_loader_1d=train_loader_1d,
+                train_loader_2d=train_loader,
+                val_loader_1d=val_loader_1d,
+                val_loader_2d=val_loader,
+                fold=0,
+                class_weights=class_weights,
+            )
+        else:
+            trainer = FoldTrainer(
+                model=model,
+                config=config,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                fold=0,
+                class_weights=class_weights,
+            )
 
         metrics = trainer.fit()
 

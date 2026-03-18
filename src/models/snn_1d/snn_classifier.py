@@ -247,7 +247,7 @@ class SNN1D(nn.Module):
         num_classes: int = 5,
         use_attention: bool = False,
         fusion_dim: int = 128,
-        timesteps: int = 4,
+        timesteps: int = 8,
     ):
         super().__init__()
         self.use_attention = use_attention

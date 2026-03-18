@@ -55,8 +55,8 @@ class LIFNeuron(nn.Module):
     def __init__(
         self,
         threshold: float = 1.0,
-        tau: float = 0.75,
-        spike_reg: float = 0.01,
+        tau: float = 2.2,
+        spike_reg: float = 0.001,
     ):
         super().__init__()
         self.threshold = nn.Parameter(torch.tensor(threshold))
@@ -103,9 +103,9 @@ class LIFNeuron(nn.Module):
             # Reset after spike (soft reset)
             membrane = membrane - spikes * self.threshold
         
-        # Spike regularization: encourage ~50% firing rate per neuron
+        # Spike regularization: encourage ~10% firing rate per neuron (sparse)
         firing_rate = spike_sum.mean() / timesteps
-        target_rate = 0.5
+        target_rate = 0.1
         reg_loss = self.spike_reg * (firing_rate - target_rate) ** 2
         
         return spike_sum, membrane, reg_loss
@@ -123,7 +123,7 @@ class LIFLayer(nn.Module):
         tau: LIF leak factor
     """
     
-    def __init__(self, channels: int, threshold: float = 1.0, tau: float = 0.75):
+    def __init__(self, channels: int, threshold: float = 1.0, tau: float = 2.2):
         super().__init__()
         self.bn = nn.BatchNorm1d(channels)
         self.lif = LIFNeuron(threshold=threshold, tau=tau)
