@@ -43,7 +43,7 @@ echo "  GPU:      $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/nul
 echo "======================================================================"
 
 # Run comprehensive pipeline
-python comprehensive_snn_pipeline.py \
+python3 comprehensive_snn_pipeline.py \
     --stage all \
     --force-continue
 
