@@ -152,6 +152,27 @@ EXPERIMENT_DEFS['snn_fusion_gated'] = {
     'gate_type': 'adaptive',
 }
 
+# Quantum-SNN Fusion (Best Quantum: RXY + Full)
+EXPERIMENT_DEFS['quantum_snn_fusion_early'] = {
+    'type': 'quantum_snn_fusion_early',
+    'name': 'Quantum-SNN-EarlyFusion-RXY-full',
+    'data_mode': 'both',
+    'quantum_rotation': 'RXY',
+    'quantum_entanglement': 'full',
+    'dim_quantum': 512,
+    'dim_1d': 128,
+    'fusion_dim': 256,
+}
+EXPERIMENT_DEFS['quantum_snn_fusion_gated'] = {
+    'type': 'quantum_snn_fusion_gated',
+    'name': 'Quantum-SNN-GatedFusion-RXY-full',
+    'data_mode': 'both',
+    'quantum_rotation': 'RXY',
+    'quantum_entanglement': 'full',
+    'confidence_threshold': 0.7,
+    'gate_type': 'adaptive',
+}
+
 
 # =========================================================================
 # Dataset Download & Verification
@@ -350,6 +371,29 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             dim_2d=512,
             confidence_threshold=exp_config.get('confidence_threshold', 0.7),
             gate_type=exp_config.get('gate_type', 'adaptive'),
+        )
+    
+    elif exp_type == 'quantum_snn_fusion_early':
+        from src.models.fusion import create_quantum_snn_fusion_early
+        return create_quantum_snn_fusion_early(
+            num_classes=num_classes,
+            dim_1d=exp_config.get('dim_1d', 128),
+            dim_quantum=exp_config.get('dim_quantum', 512),
+            fusion_dim=exp_config.get('fusion_dim', 256),
+            quantum_rotation=exp_config.get('quantum_rotation', 'RXY'),
+            quantum_entanglement=exp_config.get('quantum_entanglement', 'full'),
+        )
+    
+    elif exp_type == 'quantum_snn_fusion_gated':
+        from src.models.fusion import create_quantum_snn_fusion_gated
+        return create_quantum_snn_fusion_gated(
+            num_classes=num_classes,
+            dim_1d=128,
+            dim_quantum=exp_config.get('dim_quantum', 512),
+            confidence_threshold=exp_config.get('confidence_threshold', 0.7),
+            gate_type=exp_config.get('gate_type', 'adaptive'),
+            quantum_rotation=exp_config.get('quantum_rotation', 'RXY'),
+            quantum_entanglement=exp_config.get('quantum_entanglement', 'full'),
         )
 
     else:

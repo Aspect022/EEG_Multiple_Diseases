@@ -9,9 +9,13 @@ from .fusion_models import (
     LateFusionNetwork,
     GatedFusionNetwork,
     MultiModalFeatureExtractor,
+    QuantumSNNFusionEarly,
+    QuantumSNNFusionGated,
     create_early_fusion,
     create_late_fusion,
     create_gated_fusion,
+    create_quantum_snn_fusion_early,
+    create_quantum_snn_fusion_gated,
 )
 
 __all__ = [
@@ -19,7 +23,11 @@ __all__ = [
     'LateFusionNetwork',
     'GatedFusionNetwork',
     'MultiModalFeatureExtractor',
+    'QuantumSNNFusionEarly',
+    'QuantumSNNFusionGated',
     'create_early_fusion',
     'create_late_fusion',
     'create_gated_fusion',
+    'create_quantum_snn_fusion_early',
+    'create_quantum_snn_fusion_gated',
 ]

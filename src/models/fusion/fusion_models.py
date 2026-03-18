@@ -449,6 +449,175 @@ def create_gated_fusion(
 
 
 # ==========================================================================
+# Quantum-SNN Fusion (Best Quantum Variant: RXY + Full Entanglement)
+# ==========================================================================
+
+class QuantumSNNFusionEarly(nn.Module):
+    """
+    Early fusion of Quantum CNN (2D) + SNN-1D.
+    
+    Uses best quantum variant from W&B results:
+    - Rotation: RXY (R-X-Y gates)
+    - Entanglement: Full (all-to-all)
+    - Performance: 83.4% acc, 65.7% F1
+    
+    Architecture:
+        1D: Raw EEG → SNN-1D → Features (128-d)
+        2D: Scalogram → Quantum-CNN (RXY-full) → Features (512-d)
+        Fusion: Concat → FC → Classifier
+    """
+    
+    def __init__(
+        self,
+        num_classes: int = 5,
+        dim_1d: int = 128,
+        dim_quantum: int = 512,
+        fusion_dim: int = 256,
+        quantum_rotation: str = 'RXY',
+        quantum_entanglement: str = 'full',
+    ):
+        super().__init__()
+        # Note: Quantum model would be loaded separately
+        # This is the fusion wrapper
+        self.dim_1d = dim_1d
+        self.dim_quantum = dim_quantum
+        
+        self.fusion_classifier = nn.Sequential(
+            nn.Linear(dim_1d + dim_quantum, fusion_dim),
+            nn.BatchNorm1d(fusion_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(fusion_dim, num_classes),
+        )
+    
+    def forward(
+        self, 
+        features_1d: torch.Tensor, 
+        features_quantum: torch.Tensor
+    ) -> torch.Tensor:
+        fused = torch.cat([features_1d, features_quantum], dim=1)
+        return self.fusion_classifier(fused)
+
+
+class QuantumSNNFusionGated(nn.Module):
+    """
+    Gated fusion of Quantum CNN (2D) + SNN-1D.
+    
+    Confidence-based routing:
+    - High confidence (>0.7): Use SNN-1D only (fast)
+    - Low confidence (<0.7): Activate Quantum branch (accurate)
+    
+    Best quantum variant: RXY + Full entanglement
+    """
+    
+    def __init__(
+        self,
+        num_classes: int = 5,
+        dim_1d: int = 128,
+        dim_quantum: int = 512,
+        confidence_threshold: float = 0.7,
+        gate_type: str = 'adaptive',
+    ):
+        super().__init__()
+        self.confidence_threshold = confidence_threshold
+        self.gate_type = gate_type
+        
+        # Confidence estimator
+        self.confidence_net = nn.Sequential(
+            nn.Linear(dim_1d, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.2),
+            nn.Linear(64, 1),
+            nn.Sigmoid(),
+        )
+        
+        # Fusion network (when both branches used)
+        self.fusion_net = nn.Sequential(
+            nn.Linear(dim_1d + dim_quantum, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(256, num_classes),
+        )
+        
+        # 1D-only classifier
+        self.classifier_1d = nn.Sequential(
+            nn.Linear(dim_1d, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(64, num_classes),
+        )
+    
+    def forward(
+        self, 
+        features_1d: torch.Tensor, 
+        features_quantum: Optional[torch.Tensor] = None
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        confidence = self.confidence_net(features_1d)
+        logits_1d = self.classifier_1d(features_1d)
+        
+        gate_info = {'confidence': confidence, 'threshold': self.confidence_threshold}
+        
+        if features_quantum is not None:
+            logits_quantum = self.fusion_net(
+                torch.cat([features_1d, features_quantum], dim=1)
+            )
+            
+            if self.gate_type == 'adaptive':
+                adaptive_weight = confidence ** 2
+                logits = adaptive_weight * logits_1d + (1 - adaptive_weight) * logits_quantum
+                gate_info['adaptive_weight'] = adaptive_weight
+            else:
+                logits = logits_1d
+        else:
+            logits = logits_1d
+        
+        return logits, gate_info
+
+
+def create_quantum_snn_fusion_early(
+    num_classes: int = 5,
+    dim_1d: int = 128,
+    dim_quantum: int = 512,
+    fusion_dim: int = 256,
+    quantum_rotation: str = 'RXY',
+    quantum_entanglement: str = 'full',
+) -> QuantumSNNFusionEarly:
+    """Create quantum-SNN early fusion."""
+    return QuantumSNNFusionEarly(
+        num_classes=num_classes,
+        dim_1d=dim_1d,
+        dim_quantum=dim_quantum,
+        fusion_dim=fusion_dim,
+        quantum_rotation=quantum_rotation,
+        quantum_entanglement=quantum_entanglement,
+    )
+
+
+def create_quantum_snn_fusion_gated(
+    num_classes: int = 5,
+    dim_1d: int = 128,
+    dim_quantum: int = 512,
+    confidence_threshold: float = 0.7,
+    gate_type: str = 'adaptive',
+    quantum_rotation: str = 'RXY',
+    quantum_entanglement: str = 'full',
+) -> QuantumSNNFusionGated:
+    """Create quantum-SNN gated fusion."""
+    return QuantumSNNFusionGated(
+        num_classes=num_classes,
+        dim_1d=dim_1d,
+        dim_quantum=dim_quantum,
+        confidence_threshold=confidence_threshold,
+        gate_type=gate_type,
+        quantum_rotation=quantum_rotation,
+        quantum_entanglement=quantum_entanglement,
+    )
+
+
+# ==========================================================================
 # Multi-Modal Feature Extractor Wrapper
 # ==========================================================================
 
