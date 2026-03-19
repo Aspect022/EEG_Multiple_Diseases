@@ -177,9 +177,10 @@ class SpikingVisionTransformer(nn.Module):
         x_min = x.view(B, -1).min(dim=1, keepdim=True)[0]
         x_max = x.view(B, -1).max(dim=1, keepdim=True)[0]
         x_norm = (x - x_min.view(-1, 1, 1, 1)) / (x_max.view(-1, 1, 1, 1) - x_min.view(-1, 1, 1, 1) + 1e-8)
-        
-        # Scale to reasonable firing rate (max ~30% to prevent saturation)
-        x_spike_prob = x_norm * 0.3
+
+        # Scale to higher firing rate for 8 timesteps (increased from 0.3 to 0.7)
+        # With fewer timesteps, need higher probability to get sufficient spikes
+        x_spike_prob = x_norm * 0.7
         
         spike_record = []
         for t in range(self.num_timesteps):
