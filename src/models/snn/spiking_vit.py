@@ -23,7 +23,7 @@ class SpikingPatchEmbedding(nn.Module):
         super().__init__()
         self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size,
                               stride=patch_size, bias=False)
-        self.bn = nn.BatchNorm2d(embed_dim)
+        self.bn = nn.InstanceNorm2d(embed_dim, affine=True)  # Changed from BatchNorm2d for SNN stability
         self.neuron = create_neuron(neuron_type=neuron_type, beta=beta)
 
     def forward(self, x):
@@ -43,15 +43,15 @@ class SpikingSelfAttention(nn.Module):
         self.scale = self.head_dim ** -0.5
 
         self.q_proj = nn.Linear(embed_dim, embed_dim, bias=False)
-        self.q_bn = nn.BatchNorm1d(embed_dim)
+        self.q_bn = nn.LayerNorm(embed_dim)  # Changed from BatchNorm1d for sequence data
         self.q_neuron = create_neuron(neuron_type=neuron_type, beta=beta)
 
         self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
-        self.k_bn = nn.BatchNorm1d(embed_dim)
+        self.k_bn = nn.LayerNorm(embed_dim)  # Changed from BatchNorm1d for sequence data
         self.k_neuron = create_neuron(neuron_type=neuron_type, beta=beta)
 
         self.v_proj = nn.Linear(embed_dim, embed_dim, bias=False)
-        self.v_bn = nn.BatchNorm1d(embed_dim)
+        self.v_bn = nn.LayerNorm(embed_dim)  # Changed from BatchNorm1d for sequence data
         self.v_neuron = create_neuron(neuron_type=neuron_type, beta=beta)
 
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=False)
@@ -59,9 +59,9 @@ class SpikingSelfAttention(nn.Module):
     def forward(self, x):
         B, N, C = x.shape
 
-        q = self.q_neuron(self.q_bn(self.q_proj(x).transpose(1, 2)).transpose(1, 2))
-        k = self.k_neuron(self.k_bn(self.k_proj(x).transpose(1, 2)).transpose(1, 2))
-        v = self.v_neuron(self.v_bn(self.v_proj(x).transpose(1, 2)).transpose(1, 2))
+        q = self.q_neuron(self.q_bn(self.q_proj(x)))  # No transpose needed with LayerNorm
+        k = self.k_neuron(self.k_bn(self.k_proj(x)))  # No transpose needed with LayerNorm
+        v = self.v_neuron(self.v_bn(self.v_proj(x)))  # No transpose needed with LayerNorm
 
         q = q.view(B, N, self.num_heads, self.head_dim).transpose(1, 2)
         k = k.view(B, N, self.num_heads, self.head_dim).transpose(1, 2)
@@ -81,17 +81,17 @@ class SpikingMLP(nn.Module):
         super().__init__()
         hidden = int(embed_dim * mlp_ratio)
         self.fc1 = nn.Linear(embed_dim, hidden, bias=False)
-        self.bn1 = nn.BatchNorm1d(hidden)
+        self.bn1 = nn.LayerNorm(hidden)  # Changed from BatchNorm1d for sequence data
         self.neuron1 = create_neuron(neuron_type=neuron_type, beta=beta)
         self.fc2 = nn.Linear(hidden, embed_dim, bias=False)
-        self.bn2 = nn.BatchNorm1d(embed_dim)
+        self.bn2 = nn.LayerNorm(embed_dim)  # Changed from BatchNorm1d for sequence data
         self.neuron2 = create_neuron(neuron_type=neuron_type, beta=beta)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        out = self.neuron1(self.bn1(self.fc1(x).transpose(1, 2)).transpose(1, 2))
+        out = self.neuron1(self.bn1(self.fc1(x)))  # No transpose needed with LayerNorm
         out = self.dropout(out)
-        out = self.neuron2(self.bn2(self.fc2(out).transpose(1, 2)).transpose(1, 2))
+        out = self.neuron2(self.bn2(self.fc2(out)))  # No transpose needed with LayerNorm
         return self.dropout(out)
 
 

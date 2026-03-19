@@ -191,9 +191,9 @@ class TemporalFusionBlock(nn.Module):
         
         self.pool = nn.AdaptiveAvgPool1d(pool_length)
         self.alpha = nn.Parameter(torch.ones(3) / 3.0)
-        
+
         self.proj = nn.Conv1d(total_channels, fusion_dim, kernel_size=1, bias=False)
-        self.bn = nn.BatchNorm1d(fusion_dim)
+        self.bn = nn.InstanceNorm1d(fusion_dim, affine=True)  # Changed from BatchNorm1d for SNN stability
         self.global_pool = nn.AdaptiveAvgPool1d(1)
     
     def forward(
@@ -273,7 +273,7 @@ class SNN1D(nn.Module):
         # Classifier
         self.classifier = nn.Sequential(
             nn.Linear(fusion_dim, 64),
-            nn.BatchNorm1d(64),
+            nn.LayerNorm(64),  # Changed from BatchNorm1d for stability
             nn.ELU(),
             nn.Dropout(0.3),
             nn.Linear(64, num_classes),
