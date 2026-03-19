@@ -65,7 +65,7 @@ class LIFNeuron(nn.Module):
         self.spike_reg = spike_reg
     
     def forward(
-        self, x: torch.Tensor, timesteps: int = 25
+        self, x: torch.Tensor, timesteps: int = 8
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Process input through LIF dynamics over multiple timesteps.
@@ -132,7 +132,7 @@ class LIFLayer(nn.Module):
         self.lif = LIFNeuron(threshold=threshold, tau=tau)
 
     def forward(
-        self, x: torch.Tensor, timesteps: int = 25
+        self, x: torch.Tensor, timesteps: int = 8
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:

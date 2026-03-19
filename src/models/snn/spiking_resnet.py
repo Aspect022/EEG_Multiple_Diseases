@@ -200,7 +200,7 @@ class SpikingResNet(nn.Module):
     """
 
     def __init__(self, block, num_blocks, num_classes=5, in_channels=3,
-                 num_timesteps=25, neuron_type='lif', beta=0.9):
+                 num_timesteps=8, neuron_type='lif', beta=0.9):
         super().__init__()
         self.num_timesteps = num_timesteps
         self.neuron_type = neuron_type
@@ -327,7 +327,7 @@ class SpikingResNet(nn.Module):
 class SpikingResNet1D(nn.Module):
     """Spiking ResNet for 1D ECG signals."""
 
-    def __init__(self, num_classes=5, in_channels=12, num_timesteps=25,
+    def __init__(self, num_classes=5, in_channels=12, num_timesteps=8,
                  neuron_type='lif', beta=0.9):
         super().__init__()
         self.num_timesteps = num_timesteps
@@ -404,7 +404,7 @@ class SpikingResNet1D(nn.Module):
 # Factory
 # ==========================================================================
 
-def create_spiking_resnet(model_name='resnet18', num_classes=5, num_timesteps=25,
+def create_spiking_resnet(model_name='resnet18', num_classes=5, num_timesteps=8,
                           neuron_type='lif', pretrained=False, **kwargs):
     """Factory for Spiking ResNet models."""
     if model_name == 'resnet18':

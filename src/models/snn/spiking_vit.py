@@ -131,7 +131,7 @@ class SpikingVisionTransformer(nn.Module):
 
     def __init__(self, num_classes=5, in_channels=3, img_size=224, patch_size=16,
                  embed_dim=256, depth=4, num_heads=4, mlp_ratio=4.0,
-                 num_timesteps=25, neuron_type='lif', beta=0.9, dropout=0.1):
+                 num_timesteps=8, neuron_type='lif', beta=0.9, dropout=0.1):
         super().__init__()
         self.num_timesteps = num_timesteps
         num_patches = (img_size // patch_size) ** 2
@@ -195,7 +195,7 @@ class SpikingVisionTransformer(nn.Module):
         return torch.stack(spike_record, dim=0).sum(dim=0)
 
 
-def create_spiking_vit(num_classes=5, num_timesteps=25, neuron_type='lif',
+def create_spiking_vit(num_classes=5, num_timesteps=8, neuron_type='lif',
                        variant='small', **kwargs):
     """Factory for Spiking ViT models."""
     configs = {
