@@ -105,22 +105,29 @@ class FusionB(nn.Module):
         quantum_features = model.measurement(quantum_state)    # (B, n_qubits)
         return quantum_features.float()  # (batch, 8)
     
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor = None, scalogram: torch.Tensor = None, **kwargs) -> torch.Tensor:
         """
         Args:
-            x: (batch, 3, 224, 224) — scalogram
+            x: (batch, 3, 224, 224) — scalogram (for API compatibility)
+            scalogram: (batch, 3, 224, 224) — scalogram (for API compatibility)
         Returns:
             (batch, num_classes) logits
         """
+        # Handle both x and scalogram for API compatibility
+        if x is None and scalogram is not None:
+            x = scalogram
+        elif x is None:
+            raise ValueError("Either x or scalogram must be provided")
+        
         # Extract features from all 4 backbones
         swin_feat = self.swin(x)           # (batch, 768)
         convnext_feat = self.convnext(x)   # (batch, 768)
         deit_feat = self.deit(x)           # (batch, 384)
         quantum_feat = self._extract_quantum_features(x)  # (batch, 8)
-        
+
         # 4-way fusion
         fused = self.fusion([swin_feat, convnext_feat, deit_feat, quantum_feat])
-        
+
         # Classify
         logits = self.classifier(fused)
         return logits

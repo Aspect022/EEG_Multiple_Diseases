@@ -122,27 +122,32 @@ class FusionC(nn.Module):
     
     def forward(
         self,
-        raw_signal: torch.Tensor,
-        scalogram: torch.Tensor,
+        raw_signal: torch.Tensor = None,
+        scalogram: torch.Tensor = None,
+        **kwargs
     ) -> torch.Tensor:
         """
         Args:
             raw_signal: (batch, 6, 3000) — raw EEG
             scalogram: (batch, 3, 224, 224) — CWT scalogram
+            kwargs: For API compatibility
         Returns:
             (batch, num_classes) logits
         """
+        if raw_signal is None or scalogram is None:
+            raise ValueError("Both raw_signal and scalogram must be provided")
+        
         # Extract features from both modalities
         snn_features = self._extract_snn_features(raw_signal)  # (batch, 128)
         swin_features = self.swin(scalogram)                    # (batch, 768)
-        
+
         # Project to common dimension
         snn_proj = self.snn_proj(snn_features)                  # (batch, 256)
         swin_proj = self.swin_proj(swin_features)               # (batch, 256)
-        
+
         # Gated fusion
         fused, self._gate = self.fusion(swin_proj, snn_proj)    # (batch, 256)
-        
+
         # Classify
         logits = self.classifier(fused)
         return logits

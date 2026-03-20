@@ -66,20 +66,27 @@ class FusionA(nn.Module):
             num_classes=num_classes,
         )
     
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor = None, scalogram: torch.Tensor = None, **kwargs) -> torch.Tensor:
         """
         Args:
-            x: (batch, 3, 224, 224) — scalogram
+            x: (batch, 3, 224, 224) — scalogram (for API compatibility)
+            scalogram: (batch, 3, 224, 224) — scalogram (for API compatibility)
         Returns:
             (batch, num_classes) logits
         """
+        # Handle both x and scalogram for API compatibility
+        if x is None and scalogram is not None:
+            x = scalogram
+        elif x is None:
+            raise ValueError("Either x or scalogram must be provided")
+        
         # Extract features from both backbones
         swin_features = self.swin(x)        # (batch, 768)
         convnext_features = self.convnext(x)  # (batch, 768)
-        
+
         # Gated fusion
         fused, self._gate = self.fusion(swin_features, convnext_features)
-        
+
         # Classify
         logits = self.classifier(fused)
         return logits
