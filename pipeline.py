@@ -351,24 +351,44 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
         return create_fusion_c(num_classes=num_classes)
     
     elif exp_type == 'snn_fusion_early':
-        from src.models.fusion import create_early_fusion
-        return create_early_fusion(
+        from src.models.fusion import create_early_fusion_complete
+        # Create 1D and 2D feature extractors
+        from src.models.snn_1d import create_snn_1d_lif
+        from src.models.snn import create_spiking_resnet
+        model_1d = create_snn_1d_lif(num_classes=num_classes)
+        model_2d = create_spiking_resnet('resnet18', num_classes=num_classes, neuron_type='lif')
+        return create_early_fusion_complete(
+            model_1d=model_1d,
+            model_2d=model_2d,
             num_classes=num_classes,
             dim_1d=exp_config.get('dim_1d', 128),
             dim_2d=exp_config.get('dim_2d', 512),
             fusion_dim=exp_config.get('fusion_dim', 256),
         )
-    
+
     elif exp_type == 'snn_fusion_late':
-        from src.models.fusion import create_late_fusion
-        return create_late_fusion(num_classes=num_classes)
-    
+        from src.models.fusion import create_late_fusion_complete
+        from src.models.snn_1d import create_snn_1d_lif
+        from src.models.snn import create_spiking_resnet
+        model_1d = create_snn_1d_lif(num_classes=num_classes)
+        model_2d = create_spiking_resnet('resnet18', num_classes=num_classes, neuron_type='lif')
+        return create_late_fusion_complete(
+            model_1d=model_1d,
+            model_2d=model_2d,
+            num_classes=num_classes,
+        )
+
     elif exp_type == 'snn_fusion_gated':
-        from src.models.fusion import create_gated_fusion
-        return create_gated_fusion(
+        from src.models.fusion import create_gated_fusion_complete
+        from src.models.snn_1d import create_snn_1d_lif
+        from src.models.snn import create_spiking_resnet
+        model_1d = create_snn_1d_lif(num_classes=num_classes)
+        model_2d = create_spiking_resnet('resnet18', num_classes=num_classes, neuron_type='lif')
+        return create_gated_fusion_complete(
+            model_1d=model_1d,
+            model_2d=model_2d,
             num_classes=num_classes,
             dim_1d=128,
-            dim_2d=512,
             confidence_threshold=exp_config.get('confidence_threshold', 0.7),
             gate_type=exp_config.get('gate_type', 'adaptive'),
         )

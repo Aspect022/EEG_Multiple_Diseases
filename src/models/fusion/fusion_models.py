@@ -88,26 +88,36 @@ class EarlyFusionNetwork(nn.Module):
                 nn.init.constant_(m.bias, 0)
     
     def forward(
-        self, 
-        features_1d: torch.Tensor, 
-        features_2d: torch.Tensor
+        self,
+        features_1d: torch.Tensor = None,
+        features_2d: torch.Tensor = None,
+        raw_signal: torch.Tensor = None,
+        scalogram: torch.Tensor = None,
     ) -> torch.Tensor:
         """
         Forward pass with feature concatenation.
         
+        Accepts either pre-extracted features OR raw inputs.
+
         Args:
             features_1d: Features from 1D branch (batch, dim_1d)
             features_2d: Features from 2D branch (batch, dim_2d)
-        
+            raw_signal: Raw 1D signal (will be ignored, for API compatibility)
+            scalogram: 2D scalogram (will be ignored, for API compatibility)
+
         Returns:
             Logits (batch, num_classes)
         """
+        # If features not provided, they should have been extracted externally
+        if features_1d is None or features_2d is None:
+            raise ValueError("Features must be provided. Use wrapper model with feature extractors.")
+        
         # Concatenate features
         fused = torch.cat([features_1d, features_2d], dim=1)  # (B, dim_1d+dim_2d)
-        
+
         # Classify
         logits = self.fusion_classifier(fused)
-        
+
         return logits
 
 
@@ -157,20 +167,31 @@ class LateFusionNetwork(nn.Module):
             self.learnable_weights = True
     
     def forward(
-        self, 
-        logits_1d: torch.Tensor, 
-        logits_2d: torch.Tensor
+        self,
+        logits_1d: torch.Tensor = None,
+        logits_2d: torch.Tensor = None,
+        raw_signal: torch.Tensor = None,  # For API compatibility with trainer
+        scalogram: torch.Tensor = None,    # For API compatibility with trainer
     ) -> torch.Tensor:
         """
         Forward pass with weighted ensemble averaging.
-        
+
         Args:
             logits_1d: Logits from 1D branch (batch, num_classes)
             logits_2d: Logits from 2D branch (batch, num_classes)
-        
+            raw_signal: Raw 1D signal (ignored here, for API compatibility)
+            scalogram: 2D scalogram (ignored here, for API compatibility)
+
         Returns:
             Fused logits (batch, num_classes)
         """
+        # Require logits - they should be computed externally
+        if logits_1d is None or logits_2d is None:
+            raise ValueError(
+                "logits_1d and logits_2d must be provided. "
+                "The fusion network combines pre-computed logits from both branches."
+            )
+        
         # Compute softmax probabilities
         probs_1d = F.softmax(logits_1d, dim=1)
         probs_2d = F.softmax(logits_2d, dim=1)
@@ -304,22 +325,33 @@ class GatedFusionNetwork(nn.Module):
         return self.confidence_net(features_1d)
     
     def forward(
-        self, 
-        features_1d: torch.Tensor, 
-        features_2d: Optional[torch.Tensor] = None
+        self,
+        features_1d: torch.Tensor = None,
+        features_2d: Optional[torch.Tensor] = None,
+        raw_signal: torch.Tensor = None,  # For API compatibility
+        scalogram: torch.Tensor = None,    # For API compatibility
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """
         Forward pass with confidence-based gating.
-        
+
         Args:
             features_1d: Features from 1D branch (batch, dim_1d)
             features_2d: Features from 2D branch (batch, dim_2d) or None
-        
+            raw_signal: Raw 1D signal (ignored, for API compatibility)
+            scalogram: 2D scalogram (ignored, for API compatibility)
+
         Returns:
             Tuple of (logits, gate_info)
             - logits: (batch, num_classes)
             - gate_info: Dict with confidence, gate_decision, etc.
         """
+        # Require features
+        if features_1d is None:
+            raise ValueError(
+                "features_1d must be provided. "
+                "Use wrapper model with feature extractors."
+            )
+        
         B = features_1d.size(0)
         device = features_1d.device
         
@@ -400,8 +432,160 @@ class GatedFusionNetwork(nn.Module):
 
 
 # ==========================================================================
-# Factory Functions
+# Complete Fusion Models with Feature Extractors
 # ==========================================================================
+
+class SNNFusionEarlyComplete(nn.Module):
+    """
+    Complete early fusion model with 1D and 2D feature extractors.
+    
+    Accepts raw_signal and scalogram as input.
+    """
+    
+    def __init__(self, model_1d: nn.Module, model_2d: nn.Module,
+                 num_classes: int = 5, dim_1d: int = 128, 
+                 dim_2d: int = 512, fusion_dim: int = 256):
+        super().__init__()
+        self.model_1d = model_1d
+        self.model_2d = model_2d
+        
+        self.fusion_classifier = nn.Sequential(
+            nn.Linear(dim_1d + dim_2d, fusion_dim),
+            nn.BatchNorm1d(fusion_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(fusion_dim, fusion_dim // 2),
+            nn.BatchNorm1d(fusion_dim // 2),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.2),
+            nn.Linear(fusion_dim // 2, num_classes),
+        )
+    
+    def forward(self, raw_signal: torch.Tensor = None,
+                scalogram: torch.Tensor = None,
+                **kwargs) -> torch.Tensor:
+        """
+        Forward pass with feature extraction.
+        
+        Args:
+            raw_signal: Raw 1D EEG (batch, channels, time)
+            scalogram: 2D scalogram (batch, channels, height, width)
+        """
+        # Extract features from both branches
+        features_1d = self.model_1d(raw_signal)
+        features_2d = self.model_2d(scalogram)
+        
+        # Fuse and classify
+        fused = torch.cat([features_1d, features_2d], dim=1)
+        return self.fusion_classifier(fused)
+
+
+class SNNFusionLateComplete(nn.Module):
+    """
+    Complete late fusion model with independent 1D and 2D branches.
+    """
+    
+    def __init__(self, model_1d: nn.Module, model_2d: nn.Module,
+                 num_classes: int = 5):
+        super().__init__()
+        self.model_1d = model_1d
+        self.model_2d = model_2d
+        self.num_classes = num_classes
+        
+        # Learnable weight for combining branches
+        self.weight_1d = nn.Parameter(torch.tensor(0.5))
+        self.weight_2d = nn.Parameter(torch.tensor(0.5))
+    
+    def forward(self, raw_signal: torch.Tensor = None,
+                scalogram: torch.Tensor = None,
+                **kwargs) -> torch.Tensor:
+        """
+        Forward pass with late fusion.
+        """
+        # Get logits from both branches
+        logits_1d = self.model_1d(raw_signal)
+        logits_2d = self.model_2d(scalogram)
+        
+        # Weighted average of probabilities
+        probs_1d = F.softmax(logits_1d, dim=1)
+        probs_2d = F.softmax(logits_2d, dim=1)
+        
+        w1 = torch.sigmoid(self.weight_1d)
+        w2 = torch.sigmoid(self.weight_2d)
+        total = w1 + w2
+        w1, w2 = w1 / total, w2 / total
+        
+        fused_probs = w1 * probs_1d + w2 * probs_2d
+        return torch.log(fused_probs + 1e-8)
+
+
+class SNNFusionGatedComplete(nn.Module):
+    """
+    Complete gated fusion with confidence-based routing.
+    """
+    
+    def __init__(self, model_1d: nn.Module, model_2d: nn.Module,
+                 num_classes: int = 5, dim_1d: int = 128,
+                 confidence_threshold: float = 0.7):
+        super().__init__()
+        self.model_1d = model_1d
+        self.model_2d = model_2d
+        
+        # Confidence estimator
+        self.confidence_net = nn.Sequential(
+            nn.Linear(dim_1d, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, 1),
+            nn.Sigmoid(),
+        )
+        
+        # 1D classifier
+        self.classifier_1d = nn.Sequential(
+            nn.Linear(dim_1d, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, num_classes),
+        )
+        
+        # Fusion classifier
+        self.classifier_fusion = nn.Sequential(
+            nn.Linear(dim_1d + 512, 256),  # Assuming 2D features are 512-d
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Linear(256, num_classes),
+        )
+        
+        self.confidence_threshold = confidence_threshold
+    
+    def forward(self, raw_signal: torch.Tensor = None,
+                scalogram: torch.Tensor = None,
+                **kwargs) -> torch.Tensor:
+        """
+        Forward pass with gated fusion.
+        """
+        # Extract 1D features and get confidence
+        features_1d = self.model_1d(raw_signal)
+        confidence = self.confidence_net(features_1d)
+        
+        # Get 1D predictions
+        logits_1d = self.classifier_1d(features_1d)
+        
+        # High confidence: use 1D only
+        # Low confidence: use both branches
+        use_fusion = (confidence < self.confidence_threshold).float()
+        
+        if use_fusion.sum() > 0:
+            features_2d = self.model_2d(scalogram)
+            fused_features = torch.cat([features_1d, features_2d], dim=1)
+            logits_fusion = self.classifier_fusion(fused_features)
+            
+            # Blend based on gate
+            logits = use_fusion * logits_fusion + (1 - use_fusion) * logits_1d
+        else:
+            logits = logits_1d
+        
+        return logits
 
 def create_early_fusion(
     num_classes: int = 5,
@@ -411,6 +595,25 @@ def create_early_fusion(
 ) -> EarlyFusionNetwork:
     """Create early fusion network."""
     return EarlyFusionNetwork(
+        num_classes=num_classes,
+        dim_1d=dim_1d,
+        dim_2d=dim_2d,
+        fusion_dim=fusion_dim,
+    )
+
+
+def create_early_fusion_complete(
+    model_1d: nn.Module,
+    model_2d: nn.Module,
+    num_classes: int = 5,
+    dim_1d: int = 128,
+    dim_2d: int = 512,
+    fusion_dim: int = 256,
+) -> SNNFusionEarlyComplete:
+    """Create complete early fusion model with feature extractors."""
+    return SNNFusionEarlyComplete(
+        model_1d=model_1d,
+        model_2d=model_2d,
         num_classes=num_classes,
         dim_1d=dim_1d,
         dim_2d=dim_2d,
@@ -431,6 +634,19 @@ def create_late_fusion(
     )
 
 
+def create_late_fusion_complete(
+    model_1d: nn.Module,
+    model_2d: nn.Module,
+    num_classes: int = 5,
+) -> SNNFusionLateComplete:
+    """Create complete late fusion model with feature extractors."""
+    return SNNFusionLateComplete(
+        model_1d=model_1d,
+        model_2d=model_2d,
+        num_classes=num_classes,
+    )
+
+
 def create_gated_fusion(
     num_classes: int = 5,
     dim_1d: int = 128,
@@ -443,6 +659,25 @@ def create_gated_fusion(
         num_classes=num_classes,
         dim_1d=dim_1d,
         dim_2d=dim_2d,
+        confidence_threshold=confidence_threshold,
+        gate_type=gate_type,
+    )
+
+
+def create_gated_fusion_complete(
+    model_1d: nn.Module,
+    model_2d: nn.Module,
+    num_classes: int = 5,
+    dim_1d: int = 128,
+    confidence_threshold: float = 0.7,
+    gate_type: str = 'adaptive',
+) -> SNNFusionGatedComplete:
+    """Create complete gated fusion model with feature extractors."""
+    return SNNFusionGatedComplete(
+        model_1d=model_1d,
+        model_2d=model_2d,
+        num_classes=num_classes,
+        dim_1d=dim_1d,
         confidence_threshold=confidence_threshold,
         gate_type=gate_type,
     )
@@ -491,10 +726,24 @@ class QuantumSNNFusionEarly(nn.Module):
         )
     
     def forward(
-        self, 
-        features_1d: torch.Tensor, 
-        features_quantum: torch.Tensor
+        self,
+        features_1d: torch.Tensor = None,
+        features_quantum: torch.Tensor = None,
+        raw_signal: torch.Tensor = None,  # For API compatibility
+        scalogram: torch.Tensor = None,    # For API compatibility
     ) -> torch.Tensor:
+        """
+        Forward pass with feature concatenation.
+        
+        Args:
+            features_1d: Features from 1D branch
+            features_quantum: Features from quantum branch
+            raw_signal: Raw 1D signal (ignored, for API compatibility)
+            scalogram: 2D scalogram (ignored, for API compatibility)
+        """
+        if features_1d is None or features_quantum is None:
+            raise ValueError("features_1d and features_quantum must be provided")
+        
         fused = torch.cat([features_1d, features_quantum], dim=1)
         return self.fusion_classifier(fused)
 
@@ -551,20 +800,34 @@ class QuantumSNNFusionGated(nn.Module):
         )
     
     def forward(
-        self, 
-        features_1d: torch.Tensor, 
-        features_quantum: Optional[torch.Tensor] = None
+        self,
+        features_1d: torch.Tensor = None,
+        features_quantum: Optional[torch.Tensor] = None,
+        raw_signal: torch.Tensor = None,  # For API compatibility
+        scalogram: torch.Tensor = None,    # For API compatibility
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Forward pass with confidence-based gating.
+        
+        Args:
+            features_1d: Features from 1D branch
+            features_quantum: Features from quantum branch
+            raw_signal: Raw 1D signal (ignored, for API compatibility)
+            scalogram: 2D scalogram (ignored, for API compatibility)
+        """
+        if features_1d is None:
+            raise ValueError("features_1d must be provided")
+        
         confidence = self.confidence_net(features_1d)
         logits_1d = self.classifier_1d(features_1d)
-        
+
         gate_info = {'confidence': confidence, 'threshold': self.confidence_threshold}
-        
+
         if features_quantum is not None:
             logits_quantum = self.fusion_net(
                 torch.cat([features_1d, features_quantum], dim=1)
             )
-            
+
             if self.gate_type == 'adaptive':
                 adaptive_weight = confidence ** 2
                 logits = adaptive_weight * logits_1d + (1 - adaptive_weight) * logits_quantum
@@ -573,7 +836,7 @@ class QuantumSNNFusionGated(nn.Module):
                 logits = logits_1d
         else:
             logits = logits_1d
-        
+
         return logits, gate_info
 
 

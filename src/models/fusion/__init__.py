@@ -11,11 +11,17 @@ from .fusion_models import (
     MultiModalFeatureExtractor,
     QuantumSNNFusionEarly,
     QuantumSNNFusionGated,
+    SNNFusionEarlyComplete,
+    SNNFusionLateComplete,
+    SNNFusionGatedComplete,
     create_early_fusion,
     create_late_fusion,
     create_gated_fusion,
     create_quantum_snn_fusion_early,
     create_quantum_snn_fusion_gated,
+    create_early_fusion_complete,
+    create_late_fusion_complete,
+    create_gated_fusion_complete,
 )
 
 __all__ = [
@@ -25,9 +31,15 @@ __all__ = [
     'MultiModalFeatureExtractor',
     'QuantumSNNFusionEarly',
     'QuantumSNNFusionGated',
+    'SNNFusionEarlyComplete',
+    'SNNFusionLateComplete',
+    'SNNFusionGatedComplete',
     'create_early_fusion',
     'create_late_fusion',
     'create_gated_fusion',
     'create_quantum_snn_fusion_early',
     'create_quantum_snn_fusion_gated',
+    'create_early_fusion_complete',
+    'create_late_fusion_complete',
+    'create_gated_fusion_complete',
 ]
