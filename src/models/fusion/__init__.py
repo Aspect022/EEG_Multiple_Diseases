@@ -23,6 +23,9 @@ from .fusion_models import (
     create_late_fusion_complete,
     create_gated_fusion_complete,
 )
+from .fusion_a import FusionA, create_fusion_a
+from .fusion_b import FusionB, create_fusion_b
+from .fusion_c import FusionC, create_fusion_c
 
 __all__ = [
     'EarlyFusionNetwork',
@@ -42,4 +45,7 @@ __all__ = [
     'create_early_fusion_complete',
     'create_late_fusion_complete',
     'create_gated_fusion_complete',
+    'FusionA', 'create_fusion_a',
+    'FusionB', 'create_fusion_b',
+    'FusionC', 'create_fusion_c',
 ]
