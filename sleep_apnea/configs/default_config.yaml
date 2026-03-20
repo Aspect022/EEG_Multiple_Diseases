@@ -1,0 +1,205 @@
+# Default configuration for sleep apnea classification
+
+# =============================================================================
+# Dataset Configuration
+# =============================================================================
+dataset:
+  # Primary dataset
+  name: shhs  # shhs | apnea_ecg | mesa
+  
+  # EEG/PSG channels to use
+  channels:
+    - 'C3-A2'
+    - 'C4-A1'
+    - 'EOG-L'
+    - 'EOG-R'
+    - 'EMG'
+    - 'Resp'
+  
+  # Signal processing
+  target_sfreq: 125.0  # Target sampling frequency (Hz)
+  sequence_length: 3000  # 30 seconds at 100 Hz
+  
+  # Data splits
+  train_split: 0.7
+  val_split: 0.15
+  test_split: 0.15
+  
+  # Stratification
+  stratify_by: 'severity'  # Ensure balanced severity distribution
+
+# =============================================================================
+# Model Configuration
+# =============================================================================
+model:
+  num_classes: 4
+  class_names:
+    - 'Healthy'    # AHI < 5
+    - 'Mild'       # 5 <= AHI < 15
+    - 'Moderate'   # 15 <= AHI < 30
+    - 'Severe'     # AHI >= 30
+  
+  # Architecture-specific defaults
+  cnn_baseline:
+    in_channels: 6
+    base_filters: 32
+    num_blocks: 4
+    dropout: 0.5
+    
+  resnet18_transfer:
+    pretrained: true
+    freeze_layers: [0, 1]  # Freeze first 2 ResNet blocks initially
+    in_channels: 6
+    
+  vit_bilstm:
+    vit_name: 'vit_small_patch16_224'
+    vit_pretrained: true
+    lstm_hidden: 256
+    lstm_layers: 2
+    lstm_dropout: 0.3
+    num_epochs_sequence: 30  # Number of epochs per night to process
+
+# =============================================================================
+# Training Configuration
+# =============================================================================
+training:
+  # Basic hyperparameters
+  epochs: 30
+  batch_size: 64
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-4
+  
+  # Optimizer
+  optimizer: adamw  # adam | adamw | sgd
+  beta1: 0.9
+  beta2: 0.999
+  
+  # Learning rate scheduler
+  scheduler: cosine  # cosine | step | plateau | none
+  warmup_epochs: 5
+  min_lr: 1.0e-6
+  
+  # Regularization
+  gradient_clip: 1.0
+  label_smoothing: 0.1
+  
+  # Mixed precision
+  mixed_precision: true
+  
+  # Early stopping
+  early_stopping: true
+  patience: 10
+  monitor_metric: 'val_f1_macro'
+  monitor_mode: 'max'
+
+# =============================================================================
+# Class Imbalance Handling
+# =============================================================================
+class_imbalance:
+  # Use inverse frequency class weights
+  use_class_weights: true
+  
+  # OR use focal loss for hard examples
+  focal_loss:
+    enabled: false
+    alpha: 1.0
+    gamma: 2.0
+  
+  # OR oversampling
+  oversampling:
+    enabled: false
+    method: 'smote'  # random | smote
+
+# =============================================================================
+# Self-Supervised Pretraining Configuration
+# =============================================================================
+ssl:
+  enabled: false
+  
+  # Pretraining method
+  method: mae  # mae | simclr | byol
+  
+  # MAE-specific
+  mae:
+    mask_ratio: 0.75
+    decoder_depth: 4
+    decoder_dim: 256
+  
+  # Pretraining hyperparameters
+  epochs: 100
+  batch_size: 128
+  learning_rate: 1.5e-4
+  warmup_epochs: 10
+  
+  # Fine-tuning after pretraining
+  finetune:
+    epochs: 30
+    learning_rate: 1.0e-4
+    layer_decay: 0.75  # Lower LR for early layers
+
+# =============================================================================
+# Evaluation Configuration
+# =============================================================================
+evaluation:
+  # Metrics to compute
+  metrics:
+    - 'accuracy'
+    - 'f1_macro'
+    - 'f1_weighted'
+    - 'precision'
+    - 'recall'
+    - 'auc_roc'
+    - 'cohens_kappa'
+    - 'mcc'
+  
+  # Cross-dataset evaluation
+  cross_dataset:
+    enabled: false
+    source_dataset: 'shhs'
+    target_dataset: 'apnea_ecg'
+  
+  # Confusion matrix
+  save_confusion_matrix: true
+  
+  # Per-class metrics
+  per_class_metrics: true
+
+# =============================================================================
+# Output Configuration
+# =============================================================================
+output:
+  # Base directories
+  base_dir: './sleep_apnea/outputs'
+  log_dir: './sleep_apnea/logs'
+  checkpoint_dir: './sleep_apnea/checkpoints'
+  
+  # Checkpointing
+  save_best: true
+  save_last: true
+  save_every: 0  # 0 = disabled, N = save every N epochs
+  
+  # Logging
+  log_level: 'INFO'  # DEBUG | INFO | WARNING | ERROR
+  tensorboard: true
+  wandb: false  # Set to true if using Weights & Biases
+  
+  # Results format
+  save_predictions: true
+  save_features: false
+
+# =============================================================================
+# Reproducibility
+# =============================================================================
+reproducibility:
+  seed: 42
+  deterministic: false  # True for full reproducibility (slower)
+  benchmark: true  # cudnn.benchmark for speed
+
+# =============================================================================
+# Hardware Configuration
+# =============================================================================
+hardware:
+  device: 'auto'  # auto | cuda | cpu
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 2
