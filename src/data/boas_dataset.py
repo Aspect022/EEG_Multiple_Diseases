@@ -436,6 +436,78 @@ def create_boas_dataloaders(
     return train_loader, val_loader, test_loader
 
 
+class BOASMultiModalDataset(Dataset):
+    """
+    Paired BOAS dataset that returns the raw epoch and its scalogram together.
+
+    This avoids the label/sample misalignment that happens when two independent
+    shuffled loaders are zipped during multi-modal training.
+    """
+
+    def __init__(self, base_dataset: BOASDataset, scalogram_transform: Callable):
+        self.base_dataset = base_dataset
+        self.scalogram_transform = scalogram_transform
+        self.labels = base_dataset.labels
+        self.num_classes = base_dataset.num_classes
+
+    def __len__(self) -> int:
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int):
+        signal = self.base_dataset.epochs_data[idx]
+        label = int(self.base_dataset.labels[idx])
+
+        signal = np.nan_to_num(signal, nan=0.0)
+        raw_signal = torch.from_numpy(signal).float()
+        scalogram = self.scalogram_transform(raw_signal.clone())
+
+        return raw_signal, scalogram, label
+
+
+def create_boas_multimodal_dataloaders(
+    data_dir: str,
+    batch_size: int = 32,
+    num_workers: int = 4,
+    scalogram_transform: Optional[Callable] = None,
+    target_sfreq: float = 100.0,
+    max_subjects: Optional[int] = None,
+) -> Tuple[DataLoader, DataLoader, DataLoader]:
+    """
+    Create paired raw-signal + scalogram loaders for multi-modal experiments.
+    """
+    if scalogram_transform is None:
+        raise ValueError("scalogram_transform must be provided for multimodal BOAS loading")
+
+    train_base = BOASDataset(
+        data_dir, split='train', transform=None,
+        target_sfreq=target_sfreq, max_subjects=max_subjects,
+    )
+    val_base = BOASDataset(
+        data_dir, split='val', transform=None,
+        target_sfreq=target_sfreq, max_subjects=max_subjects,
+    )
+    test_base = BOASDataset(
+        data_dir, split='test', transform=None,
+        target_sfreq=target_sfreq, max_subjects=max_subjects,
+    )
+
+    train_ds = BOASMultiModalDataset(train_base, scalogram_transform)
+    val_ds = BOASMultiModalDataset(val_base, scalogram_transform)
+    test_ds = BOASMultiModalDataset(test_base, scalogram_transform)
+
+    pin = torch.cuda.is_available()
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                              num_workers=num_workers, pin_memory=pin)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
+                            num_workers=num_workers, pin_memory=pin)
+    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False,
+                             num_workers=num_workers, pin_memory=pin)
+
+    print(f"\n  Train: {len(train_ds)} paired epochs | Val: {len(val_ds)} | Test: {len(test_ds)}")
+    return train_loader, val_loader, test_loader
+
+
 # ---------------------------------------------------------------------------
 # Cached (Precomputed) Dataset — Memory-Mapped (Zero RAM Pressure)
 # ---------------------------------------------------------------------------

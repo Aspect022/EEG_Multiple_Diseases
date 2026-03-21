@@ -1,8 +1,8 @@
 """
-MultiModalFoldTrainer for models requiring paired 1D and 2D dataloaders.
+MultiModalFoldTrainer for models requiring paired raw-signal and scalogram data.
 
-Inherits from FoldTrainer but overrides train_epoch and evaluate
-to zip two dataloaders together.
+Uses a single dataloader that yields (raw_signal, scalogram, label) tuples so
+multi-modal training stays sample-aligned.
 """
 
 import time
@@ -29,39 +29,33 @@ class MultiModalFoldTrainer(FoldTrainer):
         self,
         model: torch.nn.Module,
         config: ResearchConfig,
-        train_loader_1d: torch.utils.data.DataLoader,
-        train_loader_2d: torch.utils.data.DataLoader,
-        val_loader_1d: torch.utils.data.DataLoader,
-        val_loader_2d: torch.utils.data.DataLoader,
+        train_loader: torch.utils.data.DataLoader,
+        val_loader: torch.utils.data.DataLoader,
         fold: int = 0,
         class_weights: torch.Tensor = None,
     ):
-        # Initialize base with 1D loaders
         super().__init__(
             model=model,
             config=config,
-            train_loader=train_loader_1d,
-            val_loader=val_loader_1d,
+            train_loader=train_loader,
+            val_loader=val_loader,
             fold=fold,
             class_weights=class_weights,
         )
-        self.train_loader_2d = train_loader_2d
-        self.val_loader_2d = val_loader_2d
 
     def train_epoch(self, epoch: int) -> Tuple[float, float]:
         self.model.train()
         total_loss, correct, total = 0.0, 0, 0
-        steps = min(len(self.train_loader), len(self.train_loader_2d))
-
-        loader_zipped = zip(self.train_loader, self.train_loader_2d)
+        steps = len(self.train_loader)
+        loader = self.train_loader
         
         if HAS_TQDM:
-            loader_zipped = tqdm(loader_zipped, total=steps, desc=f"  [Fold {self.fold}] Epoch {epoch+1}", leave=False)
+            loader = tqdm(loader, total=steps, desc=f"  [Fold {self.fold}] Epoch {epoch+1}", leave=False)
 
-        for step, ((inputs_1d, targets_1d), (inputs_2d, targets_2d)) in enumerate(loader_zipped):
+        for step, (inputs_1d, inputs_2d, targets) in enumerate(loader):
             inputs_1d = inputs_1d.to(self.device, non_blocking=True)
             inputs_2d = inputs_2d.to(self.device, non_blocking=True)
-            targets = targets_1d.to(self.device, non_blocking=True)
+            targets = targets.to(self.device, non_blocking=True)
 
             self._warmup_lr(epoch, step, steps)
 
@@ -108,7 +102,7 @@ class MultiModalFoldTrainer(FoldTrainer):
             correct += preds.eq(targets).sum().item()
 
             if HAS_TQDM and step % 20 == 0:
-                loader_zipped.set_postfix(loss=total_loss / (step + 1), acc=f"{100.0 * correct / total:.1f}%")
+                loader.set_postfix(loss=total_loss / (step + 1), acc=f"{100.0 * correct / total:.1f}%")
 
         avg_loss = total_loss / steps
         avg_acc = 100.0 * correct / total
@@ -120,13 +114,12 @@ class MultiModalFoldTrainer(FoldTrainer):
         total_loss = 0.0
         all_preds, all_labels, all_probs = [], [], []
 
-        steps = min(len(self.val_loader), len(self.val_loader_2d))
-        loader_zipped = zip(self.val_loader, self.val_loader_2d)
+        steps = len(self.val_loader)
 
-        for (inputs_1d, targets_1d), (inputs_2d, targets_2d) in loader_zipped:
+        for inputs_1d, inputs_2d, targets in self.val_loader:
             inputs_1d = inputs_1d.to(self.device, non_blocking=True)
             inputs_2d = inputs_2d.to(self.device, non_blocking=True)
-            targets = targets_1d.to(self.device, non_blocking=True)
+            targets = targets.to(self.device, non_blocking=True)
 
             outputs = self.model(raw_signal=inputs_1d, scalogram=inputs_2d)
             loss = self.criterion(outputs, targets)

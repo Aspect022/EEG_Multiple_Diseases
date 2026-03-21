@@ -166,6 +166,13 @@ def test_fusion_forward():
     print("=== Testing Fusion Forward Passes ===")
     import torch
     from src.models.fusion import create_fusion_b, create_fusion_c
+    from src.models.fusion.fusion_models import (
+        create_early_fusion_complete,
+        create_late_fusion_complete,
+        create_gated_fusion_complete,
+    )
+    from src.models.snn import create_spiking_resnet
+    from src.models.snn_1d import create_snn_1d_lif
     
     x2d = torch.randn(2, 3, 224, 224)
     x1d = torch.randn(2, 6, 3000)
@@ -178,7 +185,25 @@ def test_fusion_forward():
     fc = create_fusion_c()
     out_c = fc(raw_signal=x1d, scalogram=x2d)
     assert out_c.shape == (2, 5), f"Expected (2, 5), got {out_c.shape}"
-    print("  Fusion-C Output Shape OK\n")
+    print("  Fusion-C Output Shape OK")
+
+    model_1d = create_snn_1d_lif()
+    model_2d = create_spiking_resnet('resnet18')
+
+    early = create_early_fusion_complete(model_1d, model_2d)
+    out_early = early(raw_signal=x1d, scalogram=x2d)
+    assert out_early.shape == (2, 5), f"Expected (2, 5), got {out_early.shape}"
+    print("  Fusion-Early Complete Output Shape OK")
+
+    late = create_late_fusion_complete(model_1d, model_2d)
+    out_late = late(raw_signal=x1d, scalogram=x2d)
+    assert out_late.shape == (2, 5), f"Expected (2, 5), got {out_late.shape}"
+    print("  Fusion-Late Complete Output Shape OK")
+
+    gated = create_gated_fusion_complete(model_1d, model_2d)
+    out_gated = gated(raw_signal=x1d, scalogram=x2d)
+    assert out_gated.shape == (2, 5), f"Expected (2, 5), got {out_gated.shape}"
+    print("  Fusion-Gated Complete Output Shape OK\n")
 
 
 if __name__ == '__main__':

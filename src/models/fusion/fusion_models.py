@@ -21,6 +21,16 @@ from typing import Tuple, Optional, Dict
 from dataclasses import dataclass
 
 
+def _extract_branch_features(model: nn.Module, x: torch.Tensor) -> torch.Tensor:
+    """Prefer explicit feature extractors; fall back to forward only if needed."""
+    if hasattr(model, 'extract_features'):
+        return model.extract_features(x)
+    raise AttributeError(
+        f"{model.__class__.__name__} does not implement extract_features(). "
+        "Fusion models require feature-level branch outputs."
+    )
+
+
 # ==========================================================================
 # Early Fusion: Feature Concatenation
 # ==========================================================================
@@ -472,8 +482,8 @@ class SNNFusionEarlyComplete(nn.Module):
             scalogram: 2D scalogram (batch, channels, height, width)
         """
         # Extract features from both branches
-        features_1d = self.model_1d(raw_signal)
-        features_2d = self.model_2d(scalogram)
+        features_1d = _extract_branch_features(self.model_1d, raw_signal)
+        features_2d = _extract_branch_features(self.model_2d, scalogram)
         
         # Fuse and classify
         fused = torch.cat([features_1d, features_2d], dim=1)
@@ -526,10 +536,12 @@ class SNNFusionGatedComplete(nn.Module):
     
     def __init__(self, model_1d: nn.Module, model_2d: nn.Module,
                  num_classes: int = 5, dim_1d: int = 128,
-                 confidence_threshold: float = 0.7):
+                 dim_2d: int = 512, confidence_threshold: float = 0.7,
+                 gate_type: str = 'hard'):
         super().__init__()
         self.model_1d = model_1d
         self.model_2d = model_2d
+        self.gate_type = gate_type
         
         # Confidence estimator
         self.confidence_net = nn.Sequential(
@@ -550,7 +562,7 @@ class SNNFusionGatedComplete(nn.Module):
         
         # Fusion classifier
         self.classifier_fusion = nn.Sequential(
-            nn.Linear(dim_1d + 512, 256),  # Assuming 2D features are 512-d
+            nn.Linear(dim_1d + dim_2d, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(inplace=True),
             nn.Linear(256, num_classes),
@@ -565,7 +577,7 @@ class SNNFusionGatedComplete(nn.Module):
         Forward pass with gated fusion.
         """
         # Extract 1D features and get confidence
-        features_1d = self.model_1d(raw_signal)
+        features_1d = _extract_branch_features(self.model_1d, raw_signal)
         confidence = self.confidence_net(features_1d)
         
         # Get 1D predictions
@@ -576,7 +588,7 @@ class SNNFusionGatedComplete(nn.Module):
         use_fusion = (confidence < self.confidence_threshold).float()
         
         if use_fusion.sum() > 0:
-            features_2d = self.model_2d(scalogram)
+            features_2d = _extract_branch_features(self.model_2d, scalogram)
             fused_features = torch.cat([features_1d, features_2d], dim=1)
             logits_fusion = self.classifier_fusion(fused_features)
             
@@ -678,6 +690,7 @@ def create_gated_fusion_complete(
         model_2d=model_2d,
         num_classes=num_classes,
         dim_1d=dim_1d,
+        dim_2d=512,
         confidence_threshold=confidence_threshold,
         gate_type=gate_type,
     )

@@ -116,19 +116,19 @@ class LIFNeuron(nn.Module):
 
 class LIFLayer(nn.Module):
     """
-    Convenience layer: BatchNorm + LIF neuron.
+    Convenience layer: InstanceNorm + LIF neuron.
 
     Drop-in replacement for ReLU in any Conv1d pipeline.
 
     Args:
-        channels: Number of channels for BatchNorm
+        channels: Number of channels for normalization
         threshold: LIF threshold
         tau: LIF leak factor
     """
 
     def __init__(self, channels: int, threshold: float = 1.0, tau: float = 2.2):
         super().__init__()
-        self.bn = nn.BatchNorm1d(channels)
+        self.bn = nn.InstanceNorm1d(channels, affine=True)
         self.lif = LIFNeuron(threshold=threshold, tau=tau)
 
     def forward(

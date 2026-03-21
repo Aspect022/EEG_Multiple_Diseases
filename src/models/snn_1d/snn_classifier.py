@@ -279,17 +279,9 @@ class SNN1D(nn.Module):
             nn.Linear(64, num_classes),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass with Poisson spike encoding for proper temporal dynamics.
-        
-        Args:
-            x: (batch, 6, 3000) — raw EEG signal
-        Returns:
-            (batch, num_classes) logits
-        """
+    def _prepare_input(self, x: torch.Tensor) -> torch.Tensor:
+        """Normalize raw EEG into a stable spike-probability-like range."""
         # === Handle channel mismatch ===
-        # Dataset may provide fewer channels; pad with zeros
         if x.shape[1] < 6:
             pad = torch.zeros(
                 x.shape[0], 6 - x.shape[1], x.shape[2],
@@ -297,45 +289,45 @@ class SNN1D(nn.Module):
             )
             x = torch.cat([x, pad], dim=1)
 
-        # === Poisson Spike Encoding ===
-        # Convert continuous input to spike probability via rate coding
-        # This creates temporal variation essential for SNN computation
         B, C, L = x.shape
-        
-        # Normalize to [0, 1] range per sample
         x_min = x.view(B, -1).min(dim=1, keepdim=True)[0]
         x_max = x.view(B, -1).max(dim=1, keepdim=True)[0]
         x_norm = (x - x_min.view(-1, 1, 1)) / (x_max.view(-1, 1, 1) - x_min.view(-1, 1, 1) + 1e-8)
-        
-        # Scale to reasonable firing rate (max ~30% to prevent saturation)
-        x_spike_prob = x_norm * 0.3
-        
-        # Initialize spike statistics monitoring
+
+        return x_norm * 0.3
+
+    def extract_features(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the fused 1D representation before the classifier."""
+        x_spike_prob = self._prepare_input(x)
+
         self.spike_stats = {'stage_rates': [], 'total_spikes': 0}
-        
-        # Process through 3-stage pyramid with Poisson encoding
-        # Note: The actual spike generation happens inside LIFLayer over timesteps
-        # Here we provide the encoded input
-        s1, reg1 = self.stage1(x_spike_prob)    # (B, 128, 3000)
+
+        s1, reg1 = self.stage1(x_spike_prob)
         self.spike_stats['stage_rates'].append(s1.mean().item())
-        
-        s2, reg2 = self.stage2(s1)   # (B, 64, 1500)
+
+        s2, reg2 = self.stage2(s1)
         self.spike_stats['stage_rates'].append(s2.mean().item())
-        
-        s3, reg3 = self.stage3(s2)   # (B, 32, 750)
+
+        s3, reg3 = self.stage3(s2)
         self.spike_stats['stage_rates'].append(s3.mean().item())
 
-        # Temporal fusion
-        features = self.fusion(s1, s2, s3)  # (B, 128)
-
-        # Classification
-        logits = self.classifier(features)
-
-        # Store reg_loss for training (accessed via model.reg_loss)
+        features = self.fusion(s1, s2, s3)
         self._reg_loss = reg1 + reg2 + reg3
-        
-        # Store average firing rate for monitoring
         self.spike_stats['avg_rate'] = sum(self.spike_stats['stage_rates']) / len(self.spike_stats['stage_rates'])
+
+        return features
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass for raw EEG classification.
+        
+        Args:
+            x: (batch, 6, 3000) — raw EEG signal
+        Returns:
+            (batch, num_classes) logits
+        """
+        features = self.extract_features(x)
+        logits = self.classifier(features)
 
         return logits
     

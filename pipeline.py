@@ -288,35 +288,35 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
         return create_swin_classifier(
             model_name='swin_tiny_patch4_window7_224',
             num_classes=num_classes,
-            pretrained=True,
+            pretrained=exp_config.get('pretrained', True),
         )
 
     elif exp_type == 'vit':
         from src.models.transformer import create_vit_classifier
         return create_vit_classifier(
             num_classes=num_classes,
-            pretrained=True,
+            pretrained=exp_config.get('pretrained', True),
         )
 
     elif exp_type == 'deit':
         from src.models.transformer import create_deit_classifier
         return create_deit_classifier(
             num_classes=num_classes,
-            pretrained=True,
+            pretrained=exp_config.get('pretrained', True),
         )
 
     elif exp_type == 'efficientnet':
         from src.models.transformer import create_efficientnet_classifier
         return create_efficientnet_classifier(
             num_classes=num_classes,
-            pretrained=True,
+            pretrained=exp_config.get('pretrained', True),
         )
 
     elif exp_type == 'convnext':
         from src.models.transformer import create_convnext_classifier
         return create_convnext_classifier(
             num_classes=num_classes,
-            pretrained=True,
+            pretrained=exp_config.get('pretrained', True),
         )
 
     elif exp_type == 'snn_1d':
@@ -340,15 +340,24 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
 
     elif exp_type == 'fusion_a':
         from src.models.fusion import create_fusion_a
-        return create_fusion_a(num_classes=num_classes)
+        return create_fusion_a(
+            num_classes=num_classes,
+            pretrained=exp_config.get('pretrained', True),
+        )
 
     elif exp_type == 'fusion_b':
         from src.models.fusion import create_fusion_b
-        return create_fusion_b(num_classes=num_classes)
+        return create_fusion_b(
+            num_classes=num_classes,
+            pretrained=exp_config.get('pretrained', True),
+        )
 
     elif exp_type == 'fusion_c':
         from src.models.fusion import create_fusion_c
-        return create_fusion_c(num_classes=num_classes)
+        return create_fusion_c(
+            num_classes=num_classes,
+            pretrained=exp_config.get('pretrained', True),
+        )
     
     elif exp_type == 'snn_fusion_early':
         from src.models.fusion import create_early_fusion_complete
@@ -466,7 +475,11 @@ def run_experiment(
         torch.backends.cudnn.benchmark = True
 
         # Import data utilities
-        from src.data.boas_dataset import create_cached_dataloaders, create_boas_dataloaders
+        from src.data.boas_dataset import (
+            create_cached_dataloaders,
+            create_boas_dataloaders,
+            create_boas_multimodal_dataloaders,
+        )
         from src.data.transforms import create_scalogram_transform
 
         # Check for scalogram cache
@@ -492,33 +505,17 @@ def run_experiment(
                 max_subjects=max_subjects,
             )
         elif data_mode == 'both':
-            # Multi-modal: need both raw 1D AND 2D scalograms
-            print("  [DATA] Loading both raw 1D + 2D scalograms")
-            # 1D dataloaders
-            train_loader_1d, val_loader_1d, test_loader_1d = create_boas_dataloaders(
+            print("  [DATA] Loading paired raw 1D + 2D scalograms")
+            transform = create_scalogram_transform(
+                output_size=(224, 224), sampling_rate=100
+            )
+            train_loader, val_loader, test_loader = create_boas_multimodal_dataloaders(
                 data_dir=str(boas_path),
                 batch_size=batch_size,
-                transform=None,
                 num_workers=4,
+                scalogram_transform=transform,
                 max_subjects=max_subjects,
             )
-            # 2D dataloaders (scalograms)
-            if has_cache:
-                train_loader, val_loader, test_loader = create_cached_dataloaders(
-                    cache_dir=str(cache_path),
-                    batch_size=batch_size,
-                )
-            else:
-                transform = create_scalogram_transform(
-                    output_size=(224, 224), sampling_rate=100
-                )
-                train_loader, val_loader, test_loader = create_boas_dataloaders(
-                    data_dir=str(boas_path),
-                    batch_size=batch_size,
-                    transform=transform,
-                    num_workers=4,
-                    max_subjects=max_subjects,
-                )
         else:
             # Default 2D scalogram mode
             if has_cache:
@@ -628,10 +625,8 @@ def run_experiment(
             trainer = MultiModalFoldTrainer(
                 model=model,
                 config=config,
-                train_loader_1d=train_loader_1d,
-                train_loader_2d=train_loader,
-                val_loader_1d=val_loader_1d,
-                val_loader_2d=val_loader,
+                train_loader=train_loader,
+                val_loader=val_loader,
                 fold=0,
                 class_weights=class_weights,
             )

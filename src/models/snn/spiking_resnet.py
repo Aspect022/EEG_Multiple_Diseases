@@ -259,10 +259,29 @@ class SpikingResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-        out = self.avgpool(out)
-        out = torch.flatten(out, 1)
-        out = self.fc(out)
         return out
+
+    def extract_features(self, x):
+        """Return pooled 2D SNN features before the classifier."""
+        self._reset_states()
+        self.spike_stats = {'rates': [], 'layer_stats': {}}
+
+        x_min = x.view(x.size(0), -1).min(dim=1, keepdim=True)[0]
+        x_max = x.view(x.size(0), -1).max(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min.view(-1, 1, 1, 1)) / (x_max.view(-1, 1, 1, 1) - x_min.view(-1, 1, 1, 1) + 1e-8)
+        x_spike_prob = x_norm * 0.7
+
+        feature_record = []
+        for _ in range(self.num_timesteps):
+            spike_mask = torch.rand_like(x_spike_prob) < x_spike_prob
+            x_t = x_spike_prob * spike_mask.float()
+            feat = self.forward_timestep(x_t)
+            feature_record.append(feat)
+
+        features = torch.stack(feature_record, dim=0).sum(dim=0)
+        features = self.avgpool(features)
+        features = torch.flatten(features, 1)
+        return features
 
     def forward(self, x):
         """
@@ -291,7 +310,8 @@ class SpikingResNet(nn.Module):
             spike_mask = torch.rand_like(x_spike_prob) < x_spike_prob
             x_t = x_spike_prob * spike_mask.float()
             
-            spk = self.forward_timestep(x_t)
+            feat = self.forward_timestep(x_t)
+            spk = self.fc(torch.flatten(self.avgpool(feat), 1))
             spike_record.append(spk)
             
             # Record spike rate for this timestep

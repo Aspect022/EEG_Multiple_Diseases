@@ -88,36 +88,9 @@ class FusionC(nn.Module):
         )
     
     def _extract_snn_features(self, raw_signal: torch.Tensor) -> torch.Tensor:
-        """
-        Run SNN forward but extract features BEFORE the classifier.
-        
-        Args:
-            raw_signal: (batch, 6, 3000)
-        Returns:
-            (batch, 128) — SNN features
-        """
-        snn = self.snn
-        
-        # Handle channel mismatch
-        x = raw_signal
-        if x.shape[1] < 6:
-            pad = torch.zeros(
-                x.shape[0], 6 - x.shape[1], x.shape[2],
-                device=x.device, dtype=x.dtype,
-            )
-            x = torch.cat([x, pad], dim=1)
-        
-        # Three-stage pyramid
-        s1, reg1 = snn.stage1(x)
-        s2, reg2 = snn.stage2(s1)
-        s3, reg3 = snn.stage3(s2)
-        
-        # Temporal fusion (features, not logits)
-        features = snn.fusion(s1, s2, s3)  # (batch, 128)
-        
-        # Store reg loss
-        self._snn_reg_loss = reg1 + reg2 + reg3
-        
+        """Use the canonical 1D SNN feature extractor."""
+        features = self.snn.extract_features(raw_signal)
+        self._snn_reg_loss = self.snn.reg_loss
         return features
     
     def forward(
@@ -156,6 +129,11 @@ class FusionC(nn.Module):
     def snn_reg_loss(self) -> torch.Tensor:
         """SNN spike regularization loss."""
         return getattr(self, '_snn_reg_loss', torch.tensor(0.0))
+
+    @property
+    def reg_loss(self) -> torch.Tensor:
+        """Trainer-facing alias so spike regularization is included in loss."""
+        return self.snn_reg_loss
     
     @property
     def gate_value(self) -> torch.Tensor:
