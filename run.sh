@@ -1,12 +1,12 @@
-#!/bin/bash
+﻿#!/bin/bash
 # ==========================================================================
-# EEG Sleep Staging Pipeline — Automated Server Deployment Script
+# EEG Sleep Staging Pipeline â€” Automated Server Deployment Script
 # ==========================================================================
 #
 # This script fully automates the research pipeline on a GPU server:
 #   1. Installs awscli and downloads BOAS ds005555 from OpenNeuro S3
 #   2. Creates a Python virtual environment
-#   3. Installs all dependencies (including GPU-accelerated PennyLane)
+#   3. Installs all core dependencies
 #   4. Runs all 19 experiments sequentially
 #   5. Commits and pushes results to GitHub
 #
@@ -30,6 +30,9 @@ VENV_DIR="${VENV_DIR:-venv}"
 PYTHON="${PYTHON:-python3}"
 MODELS="${MODELS:-all}"
 MAX_SUBJECTS="${MAX_SUBJECTS:-}"
+TORCH_CHANNEL="${TORCH_CHANNEL:-cu121}"
+INSTALL_OPTIONAL_QUANTUM="${INSTALL_OPTIONAL_QUANTUM:-0}"
+AUTO_PUSH="${AUTO_PUSH:-0}"
 
 # Parse CLI args (override defaults)
 while [[ $# -gt 0 ]]; do
@@ -46,7 +49,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "======================================================================"
-echo "  EEG SLEEP STAGING PIPELINE — AUTOMATED SERVER RUN"
+echo "  EEG SLEEP STAGING PIPELINE â€” AUTOMATED SERVER RUN"
 echo "  Dataset: BOAS ds005555 (W/N1/N2/N3/REM)"
 echo "======================================================================"
 echo "  Epochs:       $EPOCHS"
@@ -70,19 +73,23 @@ echo "---------------------------------------------------"
 
 BOAS_S3="s3://openneuro.org/ds005555"
 BOAS_LOCAL="$DATA_DIR/ds005555"
+AWS_CLI=(aws)
 
 # Install awscli if not available
 if ! command -v aws &> /dev/null; then
-    echo "  [INSTALL] Installing awscli..."
-    pip install awscli --quiet
+    echo "  [INSTALL] aws not found, trying Python module fallback..."
+    $PYTHON -m pip install --user awscli --quiet || true
+    if $PYTHON -c "import awscli" 2>/dev/null; then
+        AWS_CLI=("$PYTHON" -m awscli.clidriver)
+    fi
 fi
 
 # Verify AWS CLI is now available
-if ! command -v aws &> /dev/null; then
+if ! command -v aws &> /dev/null && ! $PYTHON -c "import awscli" 2>/dev/null; then
     echo "  ERROR: awscli installation failed!"
     exit 1
 fi
-echo "  [OK] awscli: $(aws --version 2>&1 | head -1)"
+echo "  [OK] awscli available"
 
 # Download with S3 sync (parallel, resumable, no auth needed)
 verify_dataset() {
@@ -112,8 +119,8 @@ while [ $attempt -le $MAX_RETRIES ]; do
         break
     fi
 
-    echo "  [DOWNLOAD] Attempt $attempt/$MAX_RETRIES — aws s3 sync from OpenNeuro..."
-    aws s3 sync --no-sign-request "$BOAS_S3" "$BOAS_LOCAL" || true
+    echo "  [DOWNLOAD] Attempt $attempt/$MAX_RETRIES â€” aws s3 sync from OpenNeuro..."
+    "${AWS_CLI[@]}" s3 sync --no-sign-request "$BOAS_S3" "$BOAS_LOCAL" || true
 
     if verify_dataset; then
         echo "  [OK] Download complete!"
@@ -166,11 +173,15 @@ if python -c "import torch; print(torch.cuda.is_available())" 2>/dev/null | grep
     echo "  CUDA already available via existing PyTorch."
 else
     echo "  Installing PyTorch with CUDA support..."
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+    pip install torch torchvision torchaudio --index-url "https://download.pytorch.org/whl/$TORCH_CHANNEL"
 fi
 
 # Install project requirements
 pip install -r requirements.txt
+
+if [ "$INSTALL_OPTIONAL_QUANTUM" -eq 1 ]; then
+    pip install -r requirements_optional_quantum.txt || true
+fi
 
 # Install monitoring tools
 pip install wandb tensorboard --quiet 2>/dev/null || true
@@ -196,17 +207,7 @@ try:
     import pennylane as qml
     print(f'    PennyLane: {qml.__version__}')
 except:
-    print('    PennyLane: NOT INSTALLED')
-
-try:
-    dev = qml.device('lightning.gpu', wires=2)
-    print(f'    Lightning GPU: AVAILABLE')
-except:
-    try:
-        dev = qml.device('lightning.qubit', wires=2)
-        print(f'    Lightning Qubit: AVAILABLE (GPU unavailable)')
-    except:
-        print(f'    Quantum: default.qubit only')
+    print('    PennyLane: OPTIONAL / NOT INSTALLED')
 "
 
 
@@ -224,10 +225,9 @@ if [ -n "$MAX_SUBJECTS" ]; then
     PIPELINE_ARGS="$PIPELINE_ARGS --max-subjects $MAX_SUBJECTS"
 fi
 
-# W&B login (graceful — training continues without it)
-export WANDB_API_KEY="${WANDB_API_KEY:-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}"
+# W&B is optional and should be provided by the server environment when needed.
 if python -c "import wandb" 2>/dev/null; then
-    echo "  [W&B] Logged in (project: eeg-sleep-staging)"
+    echo "  [W&B] Available"
 else
     echo "  [W&B] Not available, training will continue without it"
 fi
@@ -252,25 +252,18 @@ export PYTHONWARNINGS="ignore::RuntimeWarning"
 python pipeline.py $PIPELINE_ARGS
 
 
-# ==========================================================================
-# Step 5: Git Commit & Push
-# ==========================================================================
-
-echo ""
-echo "[STEP 5/5] Pushing Results to GitHub"
-echo "--------------------------------------"
-
-# Add all results (but not the huge dataset)
-# .gitignore is already configured (results tracked, data ignored)
-
-git add -A
-
-# Commit with timestamp
-COMMIT_MSG="EEG results — $(date '+%Y-%m-%d %H:%M:%S') — ${EPOCHS} epochs — BOAS ds005555"
-git commit -m "$COMMIT_MSG" || echo "  Nothing to commit."
-
-# Push
-git push || echo "  WARNING: git push failed. You may need to push manually."
+if [ "$AUTO_PUSH" -eq 1 ]; then
+    echo ""
+    echo "[STEP 5/5] Pushing Results to GitHub"
+    echo "--------------------------------------"
+    git add -A
+    COMMIT_MSG="EEG results â€” $(date '+%Y-%m-%d %H:%M:%S') â€” ${EPOCHS} epochs â€” BOAS ds005555"
+    git commit -m "$COMMIT_MSG" || echo "  Nothing to commit."
+    git push || echo "  WARNING: git push failed. You may need to push manually."
+else
+    echo ""
+    echo "[STEP 5/5] Skipping Git push (AUTO_PUSH=0)"
+fi
 
 
 # ==========================================================================
@@ -283,3 +276,5 @@ echo "  PIPELINE COMPLETE!"
 echo "  Finished: $(date)"
 echo "  Results:  $OUTPUT_DIR/"
 echo "======================================================================"
+
+

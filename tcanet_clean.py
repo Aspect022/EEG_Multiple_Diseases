@@ -17,6 +17,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Optional
 
+from src.models.quantum.quantum_circuit import (
+    VectorizedQuantumCircuit,
+    QuantumMeasurement,
+    ROTATION_MAP,
+    ENTANGLEMENT_MAP,
+)
+
 
 # ============================================================================
 # MODULE 1: MSCNet (Multi-Scale CNN)
@@ -438,25 +445,45 @@ class QuantumLayer(nn.Module):
         - Add measurement layer (Pauli-Z expectation values)
     """
     
-    def __init__(self, features: int = 64, n_qubits: int = 8):
+    def __init__(
+        self,
+        features: int = 64,
+        n_qubits: int = 8,
+        n_layers: int = 2,
+        rotation_type: str = 'RXY',
+        entanglement_type: str = 'ring',
+        hidden_dim: Optional[int] = None,
+        dropout: float = 0.1,
+    ):
         super().__init__()
         self.features = features
         self.n_qubits = n_qubits
-        
-        # Placeholder: Simple linear transformation
-        # TODO: Replace with actual quantum circuit
-        # Example Pennylane integration:
-        #   import pennylane as qml
-        #   dev = qml.device('default.qubit', wires=n_qubits)
-        #   @qml.qnode(dev)
-        #   def quantum_circuit(inputs, weights):
-        #       qml.AngleEmbedding(inputs, wires=range(n_qubits))
-        #       qml.StronglyEntanglingLayers(weights, wires=range(n_qubits))
-        #       return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
-        self.linear = nn.Linear(features, features)
-        
-        # Hook for future quantum weights
-        # self.quantum_weights = nn.Parameter(torch.randn(n_layers, n_qubits, 3))
+        hidden_dim = hidden_dim or max(features // 2, n_qubits * 2)
+
+        rotation_axes = ROTATION_MAP.get(rotation_type, rotation_type.lower())
+        entanglement = ENTANGLEMENT_MAP.get(entanglement_type, entanglement_type)
+
+        self.pre_norm = nn.LayerNorm(features)
+        self.encoder = nn.Sequential(
+            nn.Linear(features, hidden_dim),
+            nn.ELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, n_qubits),
+        )
+        self.circuit = VectorizedQuantumCircuit(
+            n_qubits=n_qubits,
+            n_layers=n_layers,
+            rotation_axes=rotation_axes,
+            entanglement=entanglement,
+        )
+        self.measurement = QuantumMeasurement(n_qubits=n_qubits)
+        self.decoder = nn.Sequential(
+            nn.Linear(n_qubits, hidden_dim),
+            nn.ELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, features),
+        )
+        self.residual_scale = nn.Parameter(torch.tensor(0.5))
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -468,17 +495,22 @@ class QuantumLayer(nn.Module):
         Returns:
             Output tensor of shape (batch, time, features)
         """
-        # Apply linear transformation (placeholder for quantum circuit)
-        out = self.linear(x)
-        
-        # TODO: Replace with actual quantum circuit
-        # For Pennylane:
-        #   batch_size, time, features = x.shape
-        #   x_flat = x.view(-1, features)
-        #   quantum_out = quantum_circuit(x_flat, self.quantum_weights)
-        #   out = quantum_out.view(batch_size, time, -1)
-        
-        return out
+        batch_size, time_steps, features = x.shape
+        residual = x
+
+        x = self.pre_norm(x)
+        x = x.reshape(batch_size * time_steps, features)
+
+        angles = self.encoder(x)
+        angles = torch.tanh(angles) * torch.pi
+
+        quantum_state = self.circuit(angles)
+        quantum_features = self.measurement(quantum_state).float()
+
+        out = self.decoder(quantum_features)
+        out = out.view(batch_size, time_steps, features)
+
+        return residual + self.residual_scale * out
 
 
 # ============================================================================
@@ -642,6 +674,10 @@ class TCANetClean(nn.Module):
         tcn_depth: int = 4,
         num_heads: int = 8,
         dropout: float = 0.5,
+        quantum_qubits: int = 8,
+        quantum_layers: int = 2,
+        quantum_rotation: str = 'RXY',
+        quantum_entanglement: str = 'ring',
     ):
         super().__init__()
         self.channels = channels
@@ -670,8 +706,15 @@ class TCANetClean(nn.Module):
             dropout=dropout,
         )
         
-        # Module 3: Quantum Layer (placeholder)
-        self.quantum = QuantumLayer(features=filters)
+        # Module 3: Quantum bottleneck
+        self.quantum = QuantumLayer(
+            features=filters,
+            n_qubits=quantum_qubits,
+            n_layers=quantum_layers,
+            rotation_type=quantum_rotation,
+            entanglement_type=quantum_entanglement,
+            dropout=min(dropout, 0.2),
+        )
         
         # Module 4: Transformer Attention
         self.attention = TransformerAttention(
@@ -742,7 +785,7 @@ class TCANetClean(nn.Module):
         
         # Step 6: Flatten
         # (batch, time_reduced, filters) → (batch, time_reduced * filters)
-        features = x.view(batch_size, -1)
+        features = x.reshape(batch_size, -1)
         
         # Step 7: Classifier
         # (batch, time_reduced * filters) → (batch, num_classes)

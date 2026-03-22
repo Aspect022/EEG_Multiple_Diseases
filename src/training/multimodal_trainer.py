@@ -62,7 +62,9 @@ class MultiModalFoldTrainer(FoldTrainer):
             # Forward pass
             if self.scaler is not None:
                 with autocast('cuda'):
-                    outputs = self.model(raw_signal=inputs_1d, scalogram=inputs_2d)
+                    outputs = self._unwrap_outputs(
+                        self.model(raw_signal=inputs_1d, scalogram=inputs_2d)
+                    )
                     loss = self.criterion(outputs, targets)
                     
                     if hasattr(self.model, 'reg_loss'):
@@ -73,7 +75,9 @@ class MultiModalFoldTrainer(FoldTrainer):
                     loss = loss / self.config.gradient_accumulation_steps
                 self.scaler.scale(loss).backward()
             else:
-                outputs = self.model(raw_signal=inputs_1d, scalogram=inputs_2d)
+                outputs = self._unwrap_outputs(
+                    self.model(raw_signal=inputs_1d, scalogram=inputs_2d)
+                )
                 loss = self.criterion(outputs, targets)
                 
                 if hasattr(self.model, 'reg_loss'):
@@ -121,7 +125,9 @@ class MultiModalFoldTrainer(FoldTrainer):
             inputs_2d = inputs_2d.to(self.device, non_blocking=True)
             targets = targets.to(self.device, non_blocking=True)
 
-            outputs = self.model(raw_signal=inputs_1d, scalogram=inputs_2d)
+            outputs = self._unwrap_outputs(
+                self.model(raw_signal=inputs_1d, scalogram=inputs_2d)
+            )
             loss = self.criterion(outputs, targets)
             total_loss += loss.item()
 

@@ -335,6 +335,13 @@ class FoldTrainer:
             return torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode=mode, factor=0.5, patience=7)
         return None
 
+    @staticmethod
+    def _unwrap_outputs(outputs):
+        """Allow models to return logits or (logits, aux...)."""
+        if isinstance(outputs, (tuple, list)):
+            return outputs[0]
+        return outputs
+
     def _warmup_lr(self, epoch: int, step: int, steps_per_epoch: int):
         if epoch >= self.config.warmup_epochs:
             return
@@ -361,7 +368,7 @@ class FoldTrainer:
             # Forward
             if self.scaler is not None:
                 with autocast('cuda'):
-                    outputs = self.model(inputs)
+                    outputs = self._unwrap_outputs(self.model(inputs))
                     loss = self.criterion(outputs, targets)
                     
                     if hasattr(self.model, 'reg_loss'):
@@ -372,7 +379,7 @@ class FoldTrainer:
                     loss = loss / self.config.gradient_accumulation_steps
                 self.scaler.scale(loss).backward()
             else:
-                outputs = self.model(inputs)
+                outputs = self._unwrap_outputs(self.model(inputs))
                 loss = self.criterion(outputs, targets)
                 
                 if hasattr(self.model, 'reg_loss'):
@@ -418,7 +425,7 @@ class FoldTrainer:
             inputs = inputs.to(self.device, non_blocking=True)
             targets = targets.to(self.device, non_blocking=True)
 
-            outputs = self.model(inputs)
+            outputs = self._unwrap_outputs(self.model(inputs))
             loss = self.criterion(outputs, targets)
             total_loss += loss.item()
 
