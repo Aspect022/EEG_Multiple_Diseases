@@ -1,0 +1,2167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EEG Sleep Staging Project Report</title>
+  <style>
+    :root {
+      --bg: #f3efe7;
+      --paper: #fffdf8;
+      --ink: #1f2328;
+      --muted: #5d6670;
+      --rule: #d8d1c3;
+      --accent: #0f5c4d;
+      --code-bg: #f4f1ea;
+      --table-head: #ede7da;
+      --shadow: 0 12px 40px rgba(31, 35, 40, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(15, 92, 77, 0.12), transparent 28%),
+        linear-gradient(180deg, #f6f1e8 0%, #efe8dd 100%);
+      color: var(--ink);
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.65;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      padding: 14px 18px;
+      backdrop-filter: blur(12px);
+      background: rgba(243, 239, 231, 0.88);
+      border-bottom: 1px solid rgba(216, 209, 195, 0.9);
+    }
+
+    .toolbar button,
+    .toolbar a {
+      appearance: none;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fffdf8;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font: 600 14px/1.2 "Segoe UI", Arial, sans-serif;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .toolbar a.secondary {
+      background: transparent;
+      color: var(--accent);
+    }
+
+    main {
+      max-width: 980px;
+      margin: 32px auto 56px;
+      padding: 0 24px;
+    }
+
+    .report {
+      background: var(--paper);
+      border: 1px solid rgba(216, 209, 195, 0.95);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 52px 60px;
+    }
+
+    h1, h2, h3, h4 {
+      color: #132c28;
+      line-height: 1.2;
+      margin-top: 1.6em;
+      margin-bottom: 0.7em;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 2.3rem;
+      letter-spacing: -0.02em;
+    }
+
+    h2 {
+      font-size: 1.55rem;
+      border-top: 1px solid var(--rule);
+      padding-top: 1.1em;
+    }
+
+    h3 {
+      font-size: 1.2rem;
+    }
+
+    h4 {
+      font-size: 1.05rem;
+    }
+
+    p, li {
+      font-size: 1rem;
+    }
+
+    ul, ol {
+      padding-left: 1.4rem;
+    }
+
+    li + li {
+      margin-top: 0.28rem;
+    }
+
+    blockquote {
+      margin: 1.3rem 0;
+      padding: 0.7rem 1rem 0.7rem 1.2rem;
+      border-left: 4px solid var(--accent);
+      background: #f4f8f7;
+      color: #21433d;
+    }
+
+    code {
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 0.92em;
+      background: var(--code-bg);
+      padding: 0.08em 0.32em;
+      border-radius: 5px;
+    }
+
+    pre code {
+      display: block;
+      padding: 16px 18px;
+      overflow-x: auto;
+      border-radius: 14px;
+      border: 1px solid var(--rule);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.3rem 0 1.6rem;
+      font-size: 0.96rem;
+    }
+
+    th, td {
+      border: 1px solid var(--rule);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--table-head);
+    }
+
+    hr {
+      border: 0;
+      border-top: 1px solid var(--rule);
+      margin: 2rem 0;
+    }
+
+    .source-markdown {
+      display: none;
+    }
+
+    @page {
+      size: A4;
+      margin: 14mm 12mm 16mm;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .toolbar {
+        display: none;
+      }
+
+      main {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .report {
+        border: 0;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 0;
+      }
+
+      h2 {
+        page-break-after: avoid;
+      }
+
+      h3, h4, table, blockquote {
+        page-break-inside: avoid;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+    }
+
+    @media (max-width: 760px) {
+      main {
+        padding: 0 14px;
+      }
+
+      .report {
+        padding: 26px 20px;
+        border-radius: 18px;
+      }
+
+      .toolbar {
+        flex-wrap: wrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">Print / Save as PDF</button>
+    <a class="secondary" href="#report-top">Jump to Top</a>
+  </div>
+  <main>
+    <article class="report" id="report-top">
+<h1 id="eeg-sleep-staging-project-report">EEG Sleep Staging Project Report</h1>
+<p><strong>Prepared for:</strong> Mentor review<br>
+<strong>Date:</strong> March 23, 2026<br>
+<strong>Primary dataset:</strong> BOAS / OpenNeuro <code>ds005555</code><br>
+<strong>Latest result source used for this revision:</strong> <code>wandb_export_2026-03-23T00_46_06.065+05_30.csv</code><br>
+<strong>Scope:</strong> all major BOAS experiments so far, including early 2D runs, 1D expansion, latest improved runs, all fusion strategies, and architectures implemented in the repo even if not yet fully benchmarked</p>
+<hr>
+<h2 id="1-executive-summary">1. Executive Summary</h2>
+<p>This project is a broad EEG sleep staging benchmark built on a 5-class BOAS setup:</p>
+<ul>
+<li>Classes: <code>W</code>, <code>N1</code>, <code>N2</code>, <code>N3</code>, <code>REM</code></li>
+<li>Modalities explored:</li>
+<li><strong>2D scalograms</strong></li>
+<li><strong>1D raw EEG</strong></li>
+<li><strong>multi-branch fusion of 1D and 2D</strong></li>
+<li>Model families explored:</li>
+<li>classical CNN / transformer backbones</li>
+<li>spiking neural networks</li>
+<li>quantum-classical hybrids</li>
+<li>multimodal fusion systems</li>
+<li>TCANet</li>
+</ul>
+<p>The project has progressed in three broad waves:</p>
+<ol>
+<li>
+<p><strong>Wave A: 2D-first benchmarking</strong>
+   - scalogram-based image models
+   - strongest early results came from 2D quantum and 2D fusion branches</p>
+</li>
+<li>
+<p><strong>Wave B: 1D/raw EEG expansion</strong>
+   - raw temporal models, including 1D SNNs and 1D quantum models
+   - early 1D results were weaker and less stable than 2D</p>
+</li>
+<li>
+<p><strong>Wave C: newer improved paper-style runs</strong>
+   - much stronger 1D performance
+   - stronger controlled comparisons among selected candidates
+   - <code>fusion_b</code> became the best finished run in the latest paper-run group
+   - <code>fusion_c</code> entered active training as the main multimodal raw+spectral fusion candidate</p>
+</li>
+</ol>
+<p>The clearest high-level message is:</p>
+<blockquote>
+<p>2D spectral modeling has been the strongest foundation overall, 1D raw EEG improved dramatically in the later runs, and fusion remains the most promising final direction.</p>
+</blockquote>
+<hr>
+<h2 id="2-project-objective">2. Project Objective</h2>
+<p>The goal of the project is not just to optimize one model, but to build a <strong>comparative research framework</strong> for EEG sleep staging.</p>
+<p>The project is effectively asking:</p>
+<ul>
+<li>How far can we go with <strong>2D time-frequency EEG images</strong>?</li>
+<li>How much can be learned directly from <strong>raw 1D EEG</strong>?</li>
+<li>Are <strong>spiking models</strong> useful for EEG?</li>
+<li>Are <strong>quantum feature bottlenecks</strong> useful for EEG?</li>
+<li>Can <strong>fusion architectures</strong> combine temporal and spectral information better than either alone?</li>
+</ul>
+<p>This makes the repo useful both as:</p>
+<ul>
+<li>a benchmark suite</li>
+<li>a research prototype platform</li>
+<li>a staging ground for publication-oriented comparisons</li>
+</ul>
+<hr>
+<h2 id="3-dataset-and-task-setup">3. Dataset and Task Setup</h2>
+<h3 id="31-main-dataset">3.1 Main Dataset</h3>
+<p>The primary completed results in this report come from:</p>
+<ul>
+<li><strong>BOAS / OpenNeuro <code>ds005555</code></strong></li>
+<li>5-class sleep stage classification</li>
+<li>epoch-level EEG classification</li>
+</ul>
+<h3 id="32-representations-used">3.2 Representations Used</h3>
+<h4 id="a-2d-scalograms">A. 2D Scalograms</h4>
+<ul>
+<li>raw EEG epochs are transformed into time-frequency images</li>
+<li>typical input shape: about <code>3 x 224 x 224</code></li>
+<li>used by:</li>
+<li>2D SNNs</li>
+<li>transformer/CNN baselines</li>
+<li>2D quantum models</li>
+<li><code>fusion_a</code></li>
+<li><code>fusion_b</code></li>
+</ul>
+<h4 id="b-1d-raw-eeg">B. 1D Raw EEG</h4>
+<ul>
+<li>raw EEG is used as a temporal signal directly</li>
+<li>typical input shape in the current codebase: <code>6 x 3000</code></li>
+<li>used by:</li>
+<li>1D SNNs</li>
+<li>1D quantum models</li>
+<li>TCANet</li>
+<li>the raw branch of multimodal fusion models</li>
+</ul>
+<h4 id="c-multi-modal-1d-2d">C. Multi-Modal 1D + 2D</h4>
+<ul>
+<li>raw EEG and scalograms are processed in parallel</li>
+<li>used by:</li>
+<li><code>fusion_c</code></li>
+<li>SNN fusion variants</li>
+<li>quantum-SNN fusion variants</li>
+</ul>
+<h3 id="33-evaluation-caveat">3.3 Evaluation Caveat</h3>
+<p>The latest CSV is the best available summary of actual W&amp;B-tracked history, but it still mixes:</p>
+<ul>
+<li>early exploratory runs</li>
+<li>later improved paper-style reruns</li>
+<li>in-progress experiments</li>
+<li>code paths that exist but do not yet have a clean benchmark result</li>
+</ul>
+<p>So this report explicitly separates:</p>
+<ul>
+<li><strong>historical peaks</strong></li>
+<li><strong>latest rerun results</strong></li>
+<li><strong>in-progress</strong></li>
+<li><strong>implemented but not yet cleanly benchmarked</strong></li>
+</ul>
+<hr>
+<h2 id="4-chronological-development-of-the-project">4. Chronological Development of the Project</h2>
+<h3 id="stage-1-2d-scalogram-foundation">Stage 1: 2D Scalogram Foundation</h3>
+<p>The project started with 2D scalogram modeling because it allowed direct reuse of strong computer vision backbones.</p>
+<p>What was tried:</p>
+<ul>
+<li>2D spiking ResNet and ViT variants</li>
+<li>transformer baselines</li>
+<li>CNN baselines</li>
+<li>full 2D quantum sweep</li>
+</ul>
+<p>What this established:</p>
+<ul>
+<li>2D models were immediately strong</li>
+<li>quantum 2D models became top performers early</li>
+<li>standard CV backbones were very competitive</li>
+<li>this phase created a strong benchmark baseline</li>
+</ul>
+<h3 id="stage-2-raw-1d-eeg-expansion">Stage 2: Raw 1D EEG Expansion</h3>
+<p>The second phase tested whether direct temporal modeling could work without converting EEG into images.</p>
+<p>What was tried:</p>
+<ul>
+<li><code>snn_1d_lif</code></li>
+<li><code>snn_1d_attn</code></li>
+<li><code>spiking_vit_1d</code></li>
+<li>full 14-model 1D quantum sweep</li>
+</ul>
+<p>What this established:</p>
+<ul>
+<li>raw EEG was harder to optimize</li>
+<li>early 1D performance was much weaker than 2D</li>
+<li>1D quantum models were often better than early 1D SNNs</li>
+<li>this phase created the motivation for raw+spectral fusion</li>
+</ul>
+<h3 id="stage-3-improved-paper-run-phase">Stage 3: Improved Paper-Run Phase</h3>
+<p>The later BOAS runs were more selective and more publication-oriented.</p>
+<p>What changed:</p>
+<ul>
+<li>stronger training setup</li>
+<li>cleaner experiment selection</li>
+<li>more mature 1D models</li>
+<li>more serious fusion comparisons</li>
+<li>TCANet entered the system as a new raw-EEG direction</li>
+</ul>
+<p>What this changed scientifically:</p>
+<ul>
+<li>1D SNNs improved from low/mid-40% accuracy into the mid/high-70s</li>
+<li>fusion became more meaningful because the 1D branch was no longer too weak</li>
+<li>the project shifted from “2D clearly wins” to “fusion is the real final target”</li>
+</ul>
+<hr>
+<h2 id="5-all-architecture-families-tried-or-implemented">5. All Architecture Families Tried or Implemented</h2>
+<p>This section is the full architecture inventory as of the current repo and the March 23 CSV.</p>
+<h3 id="51-2d-spiking-neural-networks">5.1 2D Spiking Neural Networks</h3>
+<p>Implemented / tried:</p>
+<ul>
+<li><code>snn_lif_resnet</code></li>
+<li><code>snn_qif_resnet</code></li>
+<li><code>snn_lif_vit</code></li>
+<li><code>snn_qif_vit</code></li>
+</ul>
+<p>Purpose:</p>
+<ul>
+<li>apply biologically inspired spiking dynamics to scalogram images</li>
+<li>compare ResNet-style and transformer-style spiking backbones</li>
+<li>compare LIF vs QIF neuron behavior</li>
+</ul>
+<p>Observed pattern:</p>
+<ul>
+<li>LIF variants consistently outperformed QIF variants</li>
+<li><code>snn_lif_resnet</code> became the best 2D spiking CNN branch</li>
+<li><code>snn_lif_vit</code> was sometimes competitive but less consistent</li>
+<li>QIF branches underperformed and were often unstable</li>
+</ul>
+<h3 id="52-classical-2d-baselines">5.2 Classical 2D Baselines</h3>
+<p>Implemented / tried:</p>
+<ul>
+<li><code>swin</code></li>
+<li><code>vit</code></li>
+<li><code>deit</code></li>
+<li><code>efficientnet</code></li>
+<li><code>convnext</code></li>
+</ul>
+<p>Purpose:</p>
+<ul>
+<li>establish strong non-spiking, non-quantum baselines</li>
+<li>test whether EEG scalograms benefit from standard vision backbones</li>
+</ul>
+<p>Observed pattern:</p>
+<ul>
+<li>this family is one of the strongest overall baselines in the project</li>
+<li><code>swin</code>, <code>vit</code>, <code>deit</code>, <code>efficientnet</code>, and <code>convnext</code> all produced competitive 2D results</li>
+<li>in early runs, several of these models were above 83%</li>
+<li>in the latest improved paper-run subset, <code>convnext</code> was the strongest finished classical baseline</li>
+</ul>
+<h3 id="53-2d-quantum-classical-hybrid-models">5.3 2D Quantum-Classical Hybrid Models</h3>
+<p>Implemented / tried:</p>
+<ul>
+<li>14 total variants from:</li>
+<li>entanglement: <code>ring</code>, <code>full</code></li>
+<li>rotations: <code>RX</code>, <code>RY</code>, <code>RZ</code>, <code>RXY</code>, <code>RXZ</code>, <code>RYZ</code>, <code>RXYZ</code></li>
+</ul>
+<p>Models:</p>
+<ul>
+<li><code>quantum_ring_RX</code></li>
+<li><code>quantum_ring_RY</code></li>
+<li><code>quantum_ring_RZ</code></li>
+<li><code>quantum_ring_RXY</code></li>
+<li><code>quantum_ring_RXZ</code></li>
+<li><code>quantum_ring_RYZ</code></li>
+<li><code>quantum_ring_RXYZ</code></li>
+<li><code>quantum_full_RX</code></li>
+<li><code>quantum_full_RY</code></li>
+<li><code>quantum_full_RZ</code></li>
+<li><code>quantum_full_RXY</code></li>
+<li><code>quantum_full_RXZ</code></li>
+<li><code>quantum_full_RYZ</code></li>
+<li><code>quantum_full_RXYZ</code></li>
+</ul>
+<p>Purpose:</p>
+<ul>
+<li>compress 2D features through quantum-inspired bottlenecks</li>
+<li>test entanglement and rotation strategy choices</li>
+</ul>
+<p>Observed pattern:</p>
+<ul>
+<li>this family produced some of the strongest historical results in the whole project</li>
+<li><code>RXY</code>, <code>RXZ</code>, and <code>RXYZ</code> settings were especially strong historically</li>
+<li>later paper-style reruns used the top-performing <code>RXY</code> variants for focused comparison</li>
+</ul>
+<h3 id="54-1d-spiking-neural-networks">5.4 1D Spiking Neural Networks</h3>
+<p>Implemented / tried:</p>
+<ul>
+<li><code>snn_1d_lif</code></li>
+<li><code>snn_1d_attn</code></li>
+<li><code>spiking_vit_1d</code></li>
+</ul>
+<p>Purpose:</p>
+<ul>
+<li>test direct temporal modeling from raw EEG</li>
+<li>see whether attention improves spiking temporal modeling</li>
+<li>test whether a ViT-style 1D spiking architecture can work on raw signals</li>
+</ul>
+<p>Observed pattern:</p>
+<ul>
+<li><code>snn_1d_attn</code> became the best raw 1D spiking branch</li>
+<li><code>snn_1d_lif</code> also improved dramatically in later runs</li>
+<li><code>spiking_vit_1d</code> remained the weakest and least successful 1D family</li>
+</ul>
+<h3 id="55-1d-quantum-models">5.5 1D Quantum Models</h3>
+<p>Implemented / tried:</p>
+<ul>
+<li>another full 14-variant sweep:</li>
+<li><code>quantum_1d_ring_RX</code></li>
+<li><code>quantum_1d_ring_RY</code></li>
+<li><code>quantum_1d_ring_RZ</code></li>
+<li><code>quantum_1d_ring_RXY</code></li>
+<li><code>quantum_1d_ring_RXZ</code></li>
+<li><code>quantum_1d_ring_RYZ</code></li>
+<li><code>quantum_1d_ring_RXYZ</code></li>
+<li><code>quantum_1d_full_RX</code></li>
+<li><code>quantum_1d_full_RY</code></li>
+<li><code>quantum_1d_full_RZ</code></li>
+<li><code>quantum_1d_full_RXY</code></li>
+<li><code>quantum_1d_full_RXZ</code></li>
+<li><code>quantum_1d_full_RYZ</code></li>
+<li><code>quantum_1d_full_RXYZ</code></li>
+</ul>
+<p>Purpose:</p>
+<ul>
+<li>test whether quantum bottlenecks can help raw EEG more than standard temporal models</li>
+</ul>
+<p>Observed pattern:</p>
+<ul>
+<li>this family was very useful in the early 1D phase</li>
+<li>the best 1D quantum variants reached the mid-50% range</li>
+<li>before the later SNN improvements, these models were among the strongest raw-signal results</li>
+</ul>
+<h3 id="56-tcanet">5.6 TCANet</h3>
+<p>Implemented / tried:</p>
+<ul>
+<li><code>tcanet</code></li>
+</ul>
+<p>Role:</p>
+<ul>
+<li>a specialized raw-EEG temporal model direction</li>
+<li>now integrated into the project pipeline</li>
+<li>later modified to support a true quantum bottleneck path in the repo</li>
+</ul>
+<p>Observed pattern from W&amp;B:</p>
+<ul>
+<li>TCANet now appears in the latest CSV</li>
+<li>the recorded BOAS run is currently weak relative to the best 1D SNNs and 2D models</li>
+<li>it should be treated as an active architecture branch, not yet a top benchmark performer</li>
+</ul>
+<h3 id="57-fusion-models">5.7 Fusion Models</h3>
+<p>Implemented / tried:</p>
+<ul>
+<li><code>fusion_a</code></li>
+<li><code>fusion_b</code></li>
+<li><code>fusion_c</code></li>
+<li><code>snn_fusion_early</code></li>
+<li><code>snn_fusion_late</code></li>
+<li><code>snn_fusion_gated</code></li>
+<li><code>quantum_snn_fusion_early</code></li>
+<li><code>quantum_snn_fusion_gated</code></li>
+</ul>
+<p>This family is described in detail in Section 9 because fusion is central to the project story.</p>
+<hr>
+<h2 id="6-phase-a-results-first-2d-runs">6. Phase A Results: First 2D Runs</h2>
+<p>The first major strong results in the project came from 2D scalogram-based experiments.</p>
+<h3 id="61-historical-strong-2d-results">6.1 Historical Strong 2D Results</h3>
+<p>From the earlier BOAS runs in W&amp;B, the strongest historical 2D values include:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: right;">Best Historical Accuracy</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>swin</code></td>
+<td style="text-align: right;"><strong>84.62%</strong></td>
+<td>strongest historical classical transformer baseline</td>
+</tr>
+<tr>
+<td><code>efficientnet</code></td>
+<td style="text-align: right;"><strong>84.02%</strong></td>
+<td>strong compact CNN baseline</td>
+</tr>
+<tr>
+<td><code>quantum_ring_RXY</code></td>
+<td style="text-align: right;"><strong>83.98%</strong></td>
+<td>one of the best historical quantum runs</td>
+</tr>
+<tr>
+<td><code>quantum_ring_RXZ</code></td>
+<td style="text-align: right;"><strong>83.71%</strong></td>
+<td>very strong quantum variant</td>
+</tr>
+<tr>
+<td><code>quantum_full_RXZ</code></td>
+<td style="text-align: right;"><strong>83.55%</strong></td>
+<td>another top quantum variant</td>
+</tr>
+<tr>
+<td><code>quantum_full_RXYZ</code></td>
+<td style="text-align: right;"><strong>83.53%</strong></td>
+<td>strong quantum variant</td>
+</tr>
+<tr>
+<td><code>fusion_a</code></td>
+<td style="text-align: right;"><strong>82.01%</strong></td>
+<td>early strong fusion result</td>
+</tr>
+<tr>
+<td><code>convnext</code></td>
+<td style="text-align: right;"><strong>83.11%</strong></td>
+<td>strong classical CNN baseline</td>
+</tr>
+<tr>
+<td><code>vit</code></td>
+<td style="text-align: right;"><strong>82.98%</strong></td>
+<td>strong transformer baseline</td>
+</tr>
+<tr>
+<td><code>deit</code></td>
+<td style="text-align: right;"><strong>83.28%</strong></td>
+<td>strong transformer baseline</td>
+</tr>
+</tbody>
+</table>
+<h3 id="62-what-the-first-2d-phase-showed">6.2 What the First 2D Phase Showed</h3>
+<ul>
+<li>2D representations were strong immediately</li>
+<li>the best models were either:</li>
+<li>quantum 2D models</li>
+<li>strong classical 2D baselines</li>
+<li>fusion over multiple 2D branches</li>
+<li>2D SNNs were workable, but not top-of-table</li>
+</ul>
+<p>This phase established the main baseline that later 1D models had to catch up to.</p>
+<hr>
+<h2 id="7-phase-b-results-1d-raw-eeg-expansion">7. Phase B Results: 1D Raw EEG Expansion</h2>
+<p>The next major direction was direct raw EEG modeling.</p>
+<h3 id="71-early-1d-results">7.1 Early 1D Results</h3>
+<p>Representative early 1D runs from W&amp;B:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: right;">Early Accuracy</th>
+<th style="text-align: right;">Early Macro-F1</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>snn_1d_lif</code></td>
+<td style="text-align: right;"><strong>42.74%</strong></td>
+<td style="text-align: right;">0.320</td>
+<td>weak early raw-SNN baseline</td>
+</tr>
+<tr>
+<td><code>snn_1d_attn</code></td>
+<td style="text-align: right;"><strong>46.68%</strong></td>
+<td style="text-align: right;">0.377</td>
+<td>attention helped somewhat</td>
+</tr>
+<tr>
+<td><code>spiking_vit_1d</code></td>
+<td style="text-align: right;"><strong>20.42%</strong></td>
+<td style="text-align: right;">0.125</td>
+<td>poor final result in mature tracked run</td>
+</tr>
+<tr>
+<td><code>quantum_1d_full_RXY</code></td>
+<td style="text-align: right;"><strong>54.56%</strong></td>
+<td style="text-align: right;">0.446</td>
+<td>one of the best 1D quantum runs</td>
+</tr>
+<tr>
+<td><code>quantum_1d_ring_RYZ</code></td>
+<td style="text-align: right;"><strong>53.99%</strong></td>
+<td style="text-align: right;">0.436</td>
+<td>another top 1D quantum variant</td>
+</tr>
+</tbody>
+</table>
+<p>There were also some very early exploratory 1D runs with strange class behavior and poor macro-F1 despite higher raw accuracy. Those should be treated as unstable exploratory runs rather than final baselines.</p>
+<h3 id="72-main-interpretation-of-the-1d-phase">7.2 Main Interpretation of the 1D Phase</h3>
+<ul>
+<li>raw EEG was clearly harder than 2D scalograms</li>
+<li>1D quantum models initially looked more competitive than 1D SNNs</li>
+<li><code>spiking_vit_1d</code> did not become a strong direction</li>
+<li>this phase justified later work on:</li>
+<li>better training</li>
+<li>better 1D SNN design</li>
+<li>multimodal fusion</li>
+</ul>
+<hr>
+<h2 id="8-phase-c-results-latest-improved-runs">8. Phase C Results: Latest Improved Runs</h2>
+<p>The latest focused rerun group is the one most relevant for current reporting.</p>
+<h3 id="81-latest-finished-rerun-results">8.1 Latest Finished Rerun Results</h3>
+<p>These are the finished later paper-style runs from the latest W&amp;B CSV:</p>
+<table>
+<thead>
+<tr>
+<th>Rank</th>
+<th>Model</th>
+<th>Modality</th>
+<th style="text-align: right;">Best Accuracy</th>
+<th style="text-align: right;">Best Macro-F1</th>
+<th style="text-align: right;">Best AUC</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>fusion_b</code></td>
+<td>2D fusion</td>
+<td style="text-align: right;"><strong>82.44%</strong></td>
+<td style="text-align: right;">0.679</td>
+<td style="text-align: right;">0.935</td>
+<td>best finished latest run</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>fusion_a</code></td>
+<td>2D fusion</td>
+<td style="text-align: right;"><strong>80.79%</strong></td>
+<td style="text-align: right;">0.684</td>
+<td style="text-align: right;">0.947</td>
+<td>strong, stable fusion rerun</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>convnext</code></td>
+<td>2D</td>
+<td style="text-align: right;"><strong>80.50%</strong></td>
+<td style="text-align: right;">0.658</td>
+<td style="text-align: right;">0.937</td>
+<td>strongest finished classical rerun</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>snn_1d_attn</code></td>
+<td>1D</td>
+<td style="text-align: right;"><strong>75.76%</strong></td>
+<td style="text-align: right;">0.638</td>
+<td style="text-align: right;">0.933</td>
+<td>strongest finished raw 1D rerun</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>quantum_ring_RXY</code></td>
+<td>2D quantum</td>
+<td style="text-align: right;"><strong>75.05%</strong></td>
+<td style="text-align: right;">0.635</td>
+<td style="text-align: right;">0.944</td>
+<td>focused rerun of top quantum family</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>quantum_full_RXY</code></td>
+<td>2D quantum</td>
+<td style="text-align: right;"><strong>73.79%</strong></td>
+<td style="text-align: right;">0.623</td>
+<td style="text-align: right;">0.940</td>
+<td>focused rerun of top quantum family</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>snn_1d_lif</code></td>
+<td>1D</td>
+<td style="text-align: right;"><strong>73.73%</strong></td>
+<td style="text-align: right;">0.616</td>
+<td style="text-align: right;">0.931</td>
+<td>major improvement over earlier runs</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>swin</code></td>
+<td>2D</td>
+<td style="text-align: right;"><strong>70.65%</strong></td>
+<td style="text-align: right;">0.600</td>
+<td style="text-align: right;">0.928</td>
+<td>lower than historical Swin peak</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>snn_lif_resnet</code></td>
+<td>2D SNN</td>
+<td style="text-align: right;"><strong>67.47%</strong></td>
+<td style="text-align: right;">0.569</td>
+<td style="text-align: right;">0.902</td>
+<td>strongest finished 2D spiking rerun</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>snn_lif_vit</code></td>
+<td>2D SNN</td>
+<td style="text-align: right;"><strong>60.57%</strong></td>
+<td style="text-align: right;">0.516</td>
+<td style="text-align: right;">0.868</td>
+<td>weaker than ResNet-based spiking path</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>tcanet</code></td>
+<td>1D</td>
+<td style="text-align: right;"><strong>52.22%</strong></td>
+<td style="text-align: right;">0.195</td>
+<td style="text-align: right;">0.487</td>
+<td>integrated but not yet competitive</td>
+</tr>
+</tbody>
+</table>
+<h3 id="82-main-positive-development">8.2 Main Positive Development</h3>
+<p>The most important progress in the latest phase is the raw 1D branch:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: right;">Earlier Accuracy</th>
+<th style="text-align: right;">Latest Accuracy</th>
+<th style="text-align: right;">Gain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>snn_1d_lif</code></td>
+<td style="text-align: right;">42.74%</td>
+<td style="text-align: right;"><strong>73.73%</strong></td>
+<td style="text-align: right;"><strong>+30.99</strong></td>
+</tr>
+<tr>
+<td><code>snn_1d_attn</code></td>
+<td style="text-align: right;">46.68%</td>
+<td style="text-align: right;"><strong>75.76%</strong></td>
+<td style="text-align: right;"><strong>+28.88</strong></td>
+</tr>
+</tbody>
+</table>
+<p>This is one of the central scientific findings of the whole project.</p>
+<h3 id="83-important-nuance-on-2d-quantum-and-classical-models">8.3 Important Nuance on 2D Quantum and Classical Models</h3>
+<p>Some later focused reruns are numerically below earlier historical peaks.</p>
+<p>Examples:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: right;">Historical Peak</th>
+<th style="text-align: right;">Latest Focused Rerun</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>swin</code></td>
+<td style="text-align: right;">84.62%</td>
+<td style="text-align: right;">70.65%</td>
+</tr>
+<tr>
+<td><code>quantum_ring_RXY</code></td>
+<td style="text-align: right;">83.98%</td>
+<td style="text-align: right;">75.05%</td>
+</tr>
+<tr>
+<td><code>quantum_full_RXY</code></td>
+<td style="text-align: right;">83.43%</td>
+<td style="text-align: right;">73.79%</td>
+</tr>
+<tr>
+<td><code>convnext</code></td>
+<td style="text-align: right;">83.11%</td>
+<td style="text-align: right;">80.50%</td>
+</tr>
+</tbody>
+</table>
+<p>This should not be framed as “the models got worse.” More likely it reflects:</p>
+<ul>
+<li>different run configuration</li>
+<li>better controlled reruns</li>
+<li>changed subset or split behavior</li>
+<li>paper-style filtering of the model list</li>
+</ul>
+<p>The mentor-safe interpretation is:</p>
+<blockquote>
+<p>the newer reruns made the comparison cleaner and greatly improved the 1D branch, but the project still needs standardized reruns before comparing historical bests and later paper-style results as if they were directly identical.</p>
+</blockquote>
+<hr>
+<h2 id="9-fusion-models-and-fusion-strategies">9. Fusion Models and Fusion Strategies</h2>
+<p>Fusion is one of the most important parts of this project because it is where the core research hypothesis becomes strongest.</p>
+<h3 id="91-why-fusion-became-important">9.1 Why Fusion Became Important</h3>
+<p>The project repeatedly showed:</p>
+<ul>
+<li>2D scalograms carry strong spectral structure</li>
+<li>raw 1D EEG carries useful temporal information</li>
+<li>1D was initially weak, but later became much stronger</li>
+</ul>
+<p>That naturally leads to the idea that:</p>
+<ul>
+<li>1D and 2D are complementary</li>
+<li>the best final model may be a fusion model rather than a single branch</li>
+</ul>
+<h3 id="92-fusion_a-dual-2d-fusion">9.2 <code>fusion_a</code>: Dual 2D Fusion</h3>
+<p><strong>Model:</strong> <code>fusion_a</code></p>
+<p>Structure:</p>
+<ul>
+<li>Swin branch</li>
+<li>ConvNeXt branch</li>
+<li>gated fusion head</li>
+</ul>
+<p>Interpretation:</p>
+<ul>
+<li>this is a <strong>2D-only fusion</strong></li>
+<li>it mixes transformer-style and convolutional 2D features</li>
+</ul>
+<p>Results:</p>
+<ul>
+<li>historical run: <strong>82.01%</strong></li>
+<li>latest focused rerun: <strong>80.79%</strong></li>
+<li>consistently one of the cleanest and strongest models in the project</li>
+</ul>
+<p>Architecture summary:</p>
+<ul>
+<li>Input: 2D EEG scalogram</li>
+<li>Branch 1: Swin extracts transformer-style windowed spatial features</li>
+<li>Branch 2: ConvNeXt extracts hierarchical convolutional features</li>
+<li>Fusion: a gated fusion module learns how much each branch should contribute</li>
+<li>Head: fused representation goes to the final classifier</li>
+</ul>
+<p>Why it is strong:</p>
+<ul>
+<li>Swin and ConvNeXt learn different but complementary views of the same scalogram</li>
+<li>the gate allows the model to adaptively emphasize the more useful branch</li>
+</ul>
+<h3 id="93-fusion_b-4-way-2d-hybrid-fusion">9.3 <code>fusion_b</code>: 4-Way 2D Hybrid Fusion</h3>
+<p><strong>Model:</strong> <code>fusion_b</code></p>
+<p>Structure:</p>
+<ul>
+<li>Swin branch</li>
+<li>ConvNeXt branch</li>
+<li>DeiT branch</li>
+<li>quantum branch</li>
+<li>multi-stream fusion head</li>
+</ul>
+<p>Interpretation:</p>
+<ul>
+<li>this is the most ambitious completed <strong>2D-only fusion</strong> model</li>
+<li>it combines several distinct feature types into one head</li>
+</ul>
+<p>Result:</p>
+<ul>
+<li><strong>82.44% accuracy</strong></li>
+<li><strong>0.679 macro-F1</strong></li>
+<li>best finished latest rerun in the CSV</li>
+</ul>
+<p>Architecture summary:</p>
+<ul>
+<li>Input: 2D EEG scalogram</li>
+<li>Branch 1: Swin for windowed transformer features</li>
+<li>Branch 2: ConvNeXt for hierarchical CNN features</li>
+<li>Branch 3: DeiT for compact global transformer features</li>
+<li>Branch 4: quantum branch for quantum-compressed representation learning</li>
+<li>Fusion: a multi-stream fusion head combines all four embeddings before classification</li>
+</ul>
+<p>Why it is strong:</p>
+<ul>
+<li>it is the richest completed ensemble of distinct inductive biases in the project</li>
+<li>instead of trusting one representation style, it combines several strong 2D experts</li>
+</ul>
+<h3 id="94-fusion_c-multi-modal-raw-spectral-fusion">9.4 <code>fusion_c</code>: Multi-Modal Raw + Spectral Fusion</h3>
+<p><strong>Model:</strong> <code>fusion_c</code></p>
+<p>Original conceptual description:</p>
+<ul>
+<li>raw EEG branch</li>
+<li>2D scalogram branch</li>
+<li>gated fusion between temporal and spectral features</li>
+</ul>
+<p>Important code clarification:</p>
+<ul>
+<li>the conceptual label originally referenced Swin</li>
+<li>the current implementation uses <strong>EfficientNet-B0</strong> on the 2D branch for speed</li>
+<li>the 1D branch uses <strong>SNN-1D-Attention</strong></li>
+</ul>
+<p>So the actual current design is:</p>
+<ul>
+<li>1D raw EEG via SNN-1D-Attention</li>
+<li>2D scalogram via EfficientNet-B0</li>
+<li>gated multimodal fusion head</li>
+</ul>
+<p>Status in W&amp;B:</p>
+<ul>
+<li><strong>currently running</strong></li>
+<li>not yet available as a finalized comparison number in the CSV</li>
+</ul>
+<p>Why it matters:</p>
+<ul>
+<li>this is the most direct test of the project’s central multimodal hypothesis</li>
+</ul>
+<p>Architecture summary:</p>
+<ul>
+<li>Input A: raw EEG sequence</li>
+<li>Input B: scalogram image of the same epoch</li>
+<li>Raw branch: <code>snn_1d_attn</code> extracts temporal features directly from the waveform</li>
+<li>2D branch: EfficientNet-B0 extracts compact spectral features from the scalogram</li>
+<li>Projection: both branches are projected into a common embedding dimension</li>
+<li>Fusion: a gated multimodal fusion module combines the two embeddings</li>
+<li>Head: fused representation is classified into the 5 sleep stages</li>
+</ul>
+<p>Why it matters scientifically:</p>
+<ul>
+<li>this is the cleanest architecture for asking whether temporal and spectral EEG views are complementary enough to beat single-branch models</li>
+</ul>
+<h3 id="95-snn_fusion_early">9.5 <code>snn_fusion_early</code></h3>
+<p><strong>Model:</strong> <code>snn_fusion_early</code></p>
+<p>Concept:</p>
+<ul>
+<li>features from the 1D and 2D branches are fused before final classification</li>
+<li>strongest feature mixing among the SNN fusion family</li>
+</ul>
+<p>Status:</p>
+<ul>
+<li>present in W&amp;B</li>
+<li>marked finished</li>
+<li>but the CSV row does not contain a clean final metric summary</li>
+</ul>
+<p>Interpretation:</p>
+<ul>
+<li>it should be mentioned as <strong>tried</strong></li>
+<li>but not treated as a benchmark result on the same level as <code>fusion_a</code> or <code>fusion_b</code></li>
+</ul>
+<h3 id="96-snn_fusion_late">9.6 <code>snn_fusion_late</code></h3>
+<p><strong>Model:</strong> <code>snn_fusion_late</code></p>
+<p>Concept:</p>
+<ul>
+<li>each branch predicts separately</li>
+<li>predictions are combined later as an ensemble</li>
+</ul>
+<p>Status:</p>
+<ul>
+<li>present in W&amp;B</li>
+<li><strong>crashed</strong></li>
+</ul>
+<p>Interpretation:</p>
+<ul>
+<li>this is a tried architecture idea, but not a completed benchmark result</li>
+</ul>
+<h3 id="97-snn_fusion_gated">9.7 <code>snn_fusion_gated</code></h3>
+<p><strong>Model:</strong> <code>snn_fusion_gated</code></p>
+<p>Concept:</p>
+<ul>
+<li>adaptive routing between the two modalities</li>
+<li>tries to learn when each branch should dominate</li>
+</ul>
+<p>Status:</p>
+<ul>
+<li>implemented in the repo</li>
+<li><strong>no clean W&amp;B run appears in the latest CSV</strong></li>
+</ul>
+<p>Interpretation:</p>
+<ul>
+<li>include it in the report as an implemented branch</li>
+<li>do not present it as a completed empirical result</li>
+</ul>
+<h3 id="98-quantum_snn_fusion_early">9.8 <code>quantum_snn_fusion_early</code></h3>
+<p>Concept:</p>
+<ul>
+<li>combine raw SNN features and quantum-processed 2D features through early fusion</li>
+</ul>
+<p>Status:</p>
+<ul>
+<li>implemented in the repo</li>
+<li><strong>no clean W&amp;B run in the latest CSV</strong></li>
+</ul>
+<p>Interpretation:</p>
+<ul>
+<li>active architecture direction</li>
+<li>not yet a benchmark result</li>
+</ul>
+<h3 id="99-quantum_snn_fusion_gated">9.9 <code>quantum_snn_fusion_gated</code></h3>
+<p>Concept:</p>
+<ul>
+<li>adaptive multimodal fusion between raw SNN and quantum 2D features</li>
+</ul>
+<p>Status:</p>
+<ul>
+<li>implemented in the repo</li>
+<li><strong>no clean W&amp;B run in the latest CSV</strong></li>
+</ul>
+<p>Interpretation:</p>
+<ul>
+<li>one of the more novel research directions in the codebase</li>
+<li>should be reported as present and important, but not yet completed empirically</li>
+</ul>
+<h3 id="910-architecture-notes-on-other-important-models">9.10 Architecture Notes on Other Important Models</h3>
+<p>The following single-branch models are also important to understand because they anchor the benchmark.</p>
+<h4 id="convnext"><code>convnext</code></h4>
+<p>Architecture summary:</p>
+<ul>
+<li>Input: 2D EEG scalogram</li>
+<li>Backbone: ConvNeXt-Tiny</li>
+<li>Processing style: modernized convolutional hierarchy with patch-style stem, depthwise blocks, and stage-wise feature abstraction</li>
+<li>Head: pooled feature vector followed by classifier</li>
+</ul>
+<p>Why it matters:</p>
+<ul>
+<li>it is one of the strongest pure classical baselines</li>
+<li>it shows that a well-tuned CNN can remain highly competitive even against transformers and fusion models</li>
+</ul>
+<h4 id="snn_1d_attn"><code>snn_1d_attn</code></h4>
+<p>Architecture summary:</p>
+<ul>
+<li>Input: raw EEG signal</li>
+<li>Backbone: 1D spiking network</li>
+<li>Temporal modeling: spike-based temporal feature extraction over the raw sequence</li>
+<li>Attention: an attention block helps the model focus on the most informative temporal segments or channels</li>
+<li>Head: final feature vector is classified into sleep stages</li>
+</ul>
+<p>Why it matters:</p>
+<ul>
+<li>it is the strongest finished raw 1D model in the latest rerun set</li>
+<li>it demonstrates that raw EEG can work well without forcing everything through a 2D transform</li>
+</ul>
+<h4 id="quantum_ring_rxy-and-quantum_full_rxy"><code>quantum_ring_RXY</code> and <code>quantum_full_RXY</code></h4>
+<p>Architecture summary:</p>
+<ul>
+<li>Input: 2D EEG scalogram</li>
+<li>Front-end: classical 2D feature extractor</li>
+<li>Bottleneck: quantum-inspired circuit layer with <code>RXY</code> rotations</li>
+<li>Entanglement:</li>
+<li><code>ring</code> connects qubits locally in a loop</li>
+<li><code>full</code> uses denser all-to-all style entanglement</li>
+<li>Head: quantum-transformed features are sent to the final classifier</li>
+</ul>
+<p>Why they matter:</p>
+<ul>
+<li>these are the focused quantum candidates selected from the larger 14-model sweep</li>
+<li>they represent the main quantum benchmark line in the later paper-style runs</li>
+</ul>
+<h4 id="tcanet"><code>tcanet</code></h4>
+<p>Architecture summary:</p>
+<ul>
+<li>Input: raw EEG signal</li>
+<li>Core idea: temporal convolution and attention-style processing specialized for EEG sequence modeling</li>
+<li>Current repo direction: integrated as a clean raw-signal architecture and extended with a real quantum bottleneck path</li>
+<li>Head: learned temporal representation goes to the final sleep-stage classifier</li>
+</ul>
+<p>Why it matters:</p>
+<ul>
+<li>even though current BOAS results are not yet strong, it remains a strategically important architecture because it is a more EEG-specialized temporal model than the generic baseline families</li>
+</ul>
+<hr>
+<h2 id="10-status-summary-completed-vs-in-progress-vs-implemented">10. Status Summary: Completed vs In-Progress vs Implemented</h2>
+<h3 id="101-completed-and-tracked-with-usable-metrics">10.1 Completed and Tracked with Usable Metrics</h3>
+<ul>
+<li><code>snn_lif_resnet</code></li>
+<li><code>snn_qif_resnet</code></li>
+<li><code>snn_lif_vit</code></li>
+<li><code>snn_qif_vit</code></li>
+<li><code>swin</code></li>
+<li><code>vit</code></li>
+<li><code>deit</code></li>
+<li><code>efficientnet</code></li>
+<li><code>convnext</code></li>
+<li>all 14 2D quantum variants</li>
+<li><code>snn_1d_lif</code></li>
+<li><code>snn_1d_attn</code></li>
+<li><code>spiking_vit_1d</code></li>
+<li>all 14 1D quantum variants</li>
+<li><code>fusion_a</code></li>
+<li><code>fusion_b</code></li>
+<li><code>tcanet</code></li>
+</ul>
+<h3 id="102-in-progress-or-incomplete">10.2 In Progress or Incomplete</h3>
+<ul>
+<li><code>fusion_c</code>:</li>
+<li>active running experiment in latest CSV</li>
+<li><code>snn_fusion_early</code>:</li>
+<li>finished state but without clean usable final metric summary in the export</li>
+<li><code>snn_fusion_late</code>:</li>
+<li>crashed</li>
+</ul>
+<h3 id="103-implemented-in-the-repo-but-not-represented-by-a-clean-wb-benchmark-in-the-latest-csv">10.3 Implemented in the Repo but Not Represented by a Clean W&amp;B Benchmark in the Latest CSV</h3>
+<ul>
+<li><code>snn_fusion_gated</code></li>
+<li><code>quantum_snn_fusion_early</code></li>
+<li><code>quantum_snn_fusion_gated</code></li>
+</ul>
+<p>This distinction is important for mentor discussion because it prevents overstating what is already empirically finished.</p>
+<hr>
+<h2 id="11-main-findings-to-present">11. Main Findings to Present</h2>
+<h3 id="111-2d-scalograms-are-the-strongest-overall-foundation">11.1 2D Scalograms Are the Strongest Overall Foundation</h3>
+<p>Across the full project history, the best historical values are mostly from:</p>
+<ul>
+<li>strong 2D classical backbones</li>
+<li>2D quantum variants</li>
+<li>2D fusion models</li>
+</ul>
+<h3 id="112-raw-1d-eeg-became-much-more-credible-in-the-newer-runs">11.2 Raw 1D EEG Became Much More Credible in the Newer Runs</h3>
+<p>The jump in 1D SNN performance is one of the strongest findings in the project:</p>
+<ul>
+<li>raw 1D is no longer just a weak exploratory branch</li>
+<li>it is now a serious contributor</li>
+<li>this makes multimodal fusion scientifically meaningful</li>
+</ul>
+<h3 id="113-fusion-is-the-most-promising-endgame">11.3 Fusion Is the Most Promising Endgame</h3>
+<p>Fusion matters because:</p>
+<ul>
+<li>2D is strong</li>
+<li>1D improved sharply</li>
+<li>the modalities are complementary</li>
+</ul>
+<p>That makes the fusion family the cleanest route to a final “best system” story.</p>
+<h3 id="114-best-finished-latest-rerun">11.4 Best Finished Latest Rerun</h3>
+<p>As of the latest CSV:</p>
+<ul>
+<li><strong>best finished latest rerun = <code>fusion_b</code></strong></li>
+<li>accuracy = <strong>82.44%</strong></li>
+<li>macro-F1 = <strong>0.679</strong></li>
+</ul>
+<h3 id="115-strong-historical-models-still-need-standardized-reruns">11.5 Strong Historical Models Still Need Standardized Reruns</h3>
+<p>The project still needs a final standardized comparison among:</p>
+<ul>
+<li>top 2D classical models</li>
+<li>top 2D quantum models</li>
+<li>top 1D SNN models</li>
+<li>top fusion models</li>
+</ul>
+<p>This is necessary because historical bests and later focused reruns were not all produced under one perfectly unified setup.</p>
+<hr>
+<h2 id="12-recommended-next-steps">12. Recommended Next Steps</h2>
+<p>The most useful next steps are:</p>
+<ol>
+<li>Finalize <code>fusion_c</code> and obtain a stable completed metric table.</li>
+<li>Run clean benchmarked versions of:
+   - <code>fusion_b</code>
+   - <code>fusion_a</code>
+   - <code>convnext</code>
+   - <code>snn_1d_attn</code>
+   - <code>snn_1d_lif</code>
+   - top quantum 2D variants</li>
+<li>Decide whether the weaker branches should stay in the final paper table:
+   - <code>spiking_vit_1d</code>
+   - QIF variants
+   - TCANet in its current form</li>
+<li>Add clean benchmark runs for the implemented-but-not-yet-reported fusion branches:
+   - <code>snn_fusion_gated</code>
+   - <code>quantum_snn_fusion_early</code>
+   - <code>quantum_snn_fusion_gated</code></li>
+<li>Extend the validated pipeline beyond BOAS to Sleep-EDF for generalization testing.</li>
+</ol>
+<hr>
+<h2 id="13-final-summary">13. Final Summary</h2>
+<p>This project has grown from an exploratory benchmark into a fairly rich EEG sleep staging research platform.</p>
+<p>The major milestones so far are:</p>
+<ul>
+<li>a strong 2D scalogram benchmark foundation</li>
+<li>a complete 2D quantum sweep</li>
+<li>a complete 1D quantum sweep</li>
+<li>major improvement in raw 1D SNN performance</li>
+<li>several fusion strategies, with <code>fusion_b</code> currently the best finished latest rerun</li>
+<li><code>fusion_c</code> as the most important active multimodal experiment</li>
+<li>additional fusion architectures already implemented and ready for fuller benchmarking</li>
+</ul>
+<p>If summarized in one sentence:</p>
+<blockquote>
+<p>The project shows that 2D spectral modeling has been the strongest overall base, raw 1D modeling has improved enough to become genuinely useful, and multimodal fusion is now the most promising route to the final best-performing sleep staging system.</p>
+</blockquote>
+    </article>
+  </main>
+  <template class="source-markdown" id="source-markdown"># EEG Sleep Staging Project Report
+
+**Prepared for:** Mentor review  
+**Date:** March 23, 2026  
+**Primary dataset:** BOAS / OpenNeuro `ds005555`  
+**Latest result source used for this revision:** `wandb_export_2026-03-23T00_46_06.065+05_30.csv`  
+**Scope:** all major BOAS experiments so far, including early 2D runs, 1D expansion, latest improved runs, all fusion strategies, and architectures implemented in the repo even if not yet fully benchmarked
+
+---
+
+## 1. Executive Summary
+
+This project is a broad EEG sleep staging benchmark built on a 5-class BOAS setup:
+
+- Classes: `W`, `N1`, `N2`, `N3`, `REM`
+- Modalities explored:
+  - **2D scalograms**
+  - **1D raw EEG**
+  - **multi-branch fusion of 1D and 2D**
+- Model families explored:
+  - classical CNN / transformer backbones
+  - spiking neural networks
+  - quantum-classical hybrids
+  - multimodal fusion systems
+  - TCANet
+
+The project has progressed in three broad waves:
+
+1. **Wave A: 2D-first benchmarking**
+   - scalogram-based image models
+   - strongest early results came from 2D quantum and 2D fusion branches
+
+2. **Wave B: 1D/raw EEG expansion**
+   - raw temporal models, including 1D SNNs and 1D quantum models
+   - early 1D results were weaker and less stable than 2D
+
+3. **Wave C: newer improved paper-style runs**
+   - much stronger 1D performance
+   - stronger controlled comparisons among selected candidates
+   - `fusion_b` became the best finished run in the latest paper-run group
+   - `fusion_c` entered active training as the main multimodal raw+spectral fusion candidate
+
+The clearest high-level message is:
+
+&gt; 2D spectral modeling has been the strongest foundation overall, 1D raw EEG improved dramatically in the later runs, and fusion remains the most promising final direction.
+
+---
+
+## 2. Project Objective
+
+The goal of the project is not just to optimize one model, but to build a **comparative research framework** for EEG sleep staging.
+
+The project is effectively asking:
+
+- How far can we go with **2D time-frequency EEG images**?
+- How much can be learned directly from **raw 1D EEG**?
+- Are **spiking models** useful for EEG?
+- Are **quantum feature bottlenecks** useful for EEG?
+- Can **fusion architectures** combine temporal and spectral information better than either alone?
+
+This makes the repo useful both as:
+
+- a benchmark suite
+- a research prototype platform
+- a staging ground for publication-oriented comparisons
+
+---
+
+## 3. Dataset and Task Setup
+
+### 3.1 Main Dataset
+
+The primary completed results in this report come from:
+
+- **BOAS / OpenNeuro `ds005555`**
+- 5-class sleep stage classification
+- epoch-level EEG classification
+
+### 3.2 Representations Used
+
+#### A. 2D Scalograms
+
+- raw EEG epochs are transformed into time-frequency images
+- typical input shape: about `3 x 224 x 224`
+- used by:
+  - 2D SNNs
+  - transformer/CNN baselines
+  - 2D quantum models
+  - `fusion_a`
+  - `fusion_b`
+
+#### B. 1D Raw EEG
+
+- raw EEG is used as a temporal signal directly
+- typical input shape in the current codebase: `6 x 3000`
+- used by:
+  - 1D SNNs
+  - 1D quantum models
+  - TCANet
+  - the raw branch of multimodal fusion models
+
+#### C. Multi-Modal 1D + 2D
+
+- raw EEG and scalograms are processed in parallel
+- used by:
+  - `fusion_c`
+  - SNN fusion variants
+  - quantum-SNN fusion variants
+
+### 3.3 Evaluation Caveat
+
+The latest CSV is the best available summary of actual W&amp;B-tracked history, but it still mixes:
+
+- early exploratory runs
+- later improved paper-style reruns
+- in-progress experiments
+- code paths that exist but do not yet have a clean benchmark result
+
+So this report explicitly separates:
+
+- **historical peaks**
+- **latest rerun results**
+- **in-progress**
+- **implemented but not yet cleanly benchmarked**
+
+---
+
+## 4. Chronological Development of the Project
+
+### Stage 1: 2D Scalogram Foundation
+
+The project started with 2D scalogram modeling because it allowed direct reuse of strong computer vision backbones.
+
+What was tried:
+
+- 2D spiking ResNet and ViT variants
+- transformer baselines
+- CNN baselines
+- full 2D quantum sweep
+
+What this established:
+
+- 2D models were immediately strong
+- quantum 2D models became top performers early
+- standard CV backbones were very competitive
+- this phase created a strong benchmark baseline
+
+### Stage 2: Raw 1D EEG Expansion
+
+The second phase tested whether direct temporal modeling could work without converting EEG into images.
+
+What was tried:
+
+- `snn_1d_lif`
+- `snn_1d_attn`
+- `spiking_vit_1d`
+- full 14-model 1D quantum sweep
+
+What this established:
+
+- raw EEG was harder to optimize
+- early 1D performance was much weaker than 2D
+- 1D quantum models were often better than early 1D SNNs
+- this phase created the motivation for raw+spectral fusion
+
+### Stage 3: Improved Paper-Run Phase
+
+The later BOAS runs were more selective and more publication-oriented.
+
+What changed:
+
+- stronger training setup
+- cleaner experiment selection
+- more mature 1D models
+- more serious fusion comparisons
+- TCANet entered the system as a new raw-EEG direction
+
+What this changed scientifically:
+
+- 1D SNNs improved from low/mid-40% accuracy into the mid/high-70s
+- fusion became more meaningful because the 1D branch was no longer too weak
+- the project shifted from “2D clearly wins” to “fusion is the real final target”
+
+---
+
+## 5. All Architecture Families Tried or Implemented
+
+This section is the full architecture inventory as of the current repo and the March 23 CSV.
+
+### 5.1 2D Spiking Neural Networks
+
+Implemented / tried:
+
+- `snn_lif_resnet`
+- `snn_qif_resnet`
+- `snn_lif_vit`
+- `snn_qif_vit`
+
+Purpose:
+
+- apply biologically inspired spiking dynamics to scalogram images
+- compare ResNet-style and transformer-style spiking backbones
+- compare LIF vs QIF neuron behavior
+
+Observed pattern:
+
+- LIF variants consistently outperformed QIF variants
+- `snn_lif_resnet` became the best 2D spiking CNN branch
+- `snn_lif_vit` was sometimes competitive but less consistent
+- QIF branches underperformed and were often unstable
+
+### 5.2 Classical 2D Baselines
+
+Implemented / tried:
+
+- `swin`
+- `vit`
+- `deit`
+- `efficientnet`
+- `convnext`
+
+Purpose:
+
+- establish strong non-spiking, non-quantum baselines
+- test whether EEG scalograms benefit from standard vision backbones
+
+Observed pattern:
+
+- this family is one of the strongest overall baselines in the project
+- `swin`, `vit`, `deit`, `efficientnet`, and `convnext` all produced competitive 2D results
+- in early runs, several of these models were above 83%
+- in the latest improved paper-run subset, `convnext` was the strongest finished classical baseline
+
+### 5.3 2D Quantum-Classical Hybrid Models
+
+Implemented / tried:
+
+- 14 total variants from:
+  - entanglement: `ring`, `full`
+  - rotations: `RX`, `RY`, `RZ`, `RXY`, `RXZ`, `RYZ`, `RXYZ`
+
+Models:
+
+- `quantum_ring_RX`
+- `quantum_ring_RY`
+- `quantum_ring_RZ`
+- `quantum_ring_RXY`
+- `quantum_ring_RXZ`
+- `quantum_ring_RYZ`
+- `quantum_ring_RXYZ`
+- `quantum_full_RX`
+- `quantum_full_RY`
+- `quantum_full_RZ`
+- `quantum_full_RXY`
+- `quantum_full_RXZ`
+- `quantum_full_RYZ`
+- `quantum_full_RXYZ`
+
+Purpose:
+
+- compress 2D features through quantum-inspired bottlenecks
+- test entanglement and rotation strategy choices
+
+Observed pattern:
+
+- this family produced some of the strongest historical results in the whole project
+- `RXY`, `RXZ`, and `RXYZ` settings were especially strong historically
+- later paper-style reruns used the top-performing `RXY` variants for focused comparison
+
+### 5.4 1D Spiking Neural Networks
+
+Implemented / tried:
+
+- `snn_1d_lif`
+- `snn_1d_attn`
+- `spiking_vit_1d`
+
+Purpose:
+
+- test direct temporal modeling from raw EEG
+- see whether attention improves spiking temporal modeling
+- test whether a ViT-style 1D spiking architecture can work on raw signals
+
+Observed pattern:
+
+- `snn_1d_attn` became the best raw 1D spiking branch
+- `snn_1d_lif` also improved dramatically in later runs
+- `spiking_vit_1d` remained the weakest and least successful 1D family
+
+### 5.5 1D Quantum Models
+
+Implemented / tried:
+
+- another full 14-variant sweep:
+  - `quantum_1d_ring_RX`
+  - `quantum_1d_ring_RY`
+  - `quantum_1d_ring_RZ`
+  - `quantum_1d_ring_RXY`
+  - `quantum_1d_ring_RXZ`
+  - `quantum_1d_ring_RYZ`
+  - `quantum_1d_ring_RXYZ`
+  - `quantum_1d_full_RX`
+  - `quantum_1d_full_RY`
+  - `quantum_1d_full_RZ`
+  - `quantum_1d_full_RXY`
+  - `quantum_1d_full_RXZ`
+  - `quantum_1d_full_RYZ`
+  - `quantum_1d_full_RXYZ`
+
+Purpose:
+
+- test whether quantum bottlenecks can help raw EEG more than standard temporal models
+
+Observed pattern:
+
+- this family was very useful in the early 1D phase
+- the best 1D quantum variants reached the mid-50% range
+- before the later SNN improvements, these models were among the strongest raw-signal results
+
+### 5.6 TCANet
+
+Implemented / tried:
+
+- `tcanet`
+
+Role:
+
+- a specialized raw-EEG temporal model direction
+- now integrated into the project pipeline
+- later modified to support a true quantum bottleneck path in the repo
+
+Observed pattern from W&amp;B:
+
+- TCANet now appears in the latest CSV
+- the recorded BOAS run is currently weak relative to the best 1D SNNs and 2D models
+- it should be treated as an active architecture branch, not yet a top benchmark performer
+
+### 5.7 Fusion Models
+
+Implemented / tried:
+
+- `fusion_a`
+- `fusion_b`
+- `fusion_c`
+- `snn_fusion_early`
+- `snn_fusion_late`
+- `snn_fusion_gated`
+- `quantum_snn_fusion_early`
+- `quantum_snn_fusion_gated`
+
+This family is described in detail in Section 9 because fusion is central to the project story.
+
+---
+
+## 6. Phase A Results: First 2D Runs
+
+The first major strong results in the project came from 2D scalogram-based experiments.
+
+### 6.1 Historical Strong 2D Results
+
+From the earlier BOAS runs in W&amp;B, the strongest historical 2D values include:
+
+| Model | Best Historical Accuracy | Notes |
+|------|------:|------|
+| `swin` | **84.62%** | strongest historical classical transformer baseline |
+| `efficientnet` | **84.02%** | strong compact CNN baseline |
+| `quantum_ring_RXY` | **83.98%** | one of the best historical quantum runs |
+| `quantum_ring_RXZ` | **83.71%** | very strong quantum variant |
+| `quantum_full_RXZ` | **83.55%** | another top quantum variant |
+| `quantum_full_RXYZ` | **83.53%** | strong quantum variant |
+| `fusion_a` | **82.01%** | early strong fusion result |
+| `convnext` | **83.11%** | strong classical CNN baseline |
+| `vit` | **82.98%** | strong transformer baseline |
+| `deit` | **83.28%** | strong transformer baseline |
+
+### 6.2 What the First 2D Phase Showed
+
+- 2D representations were strong immediately
+- the best models were either:
+  - quantum 2D models
+  - strong classical 2D baselines
+  - fusion over multiple 2D branches
+- 2D SNNs were workable, but not top-of-table
+
+This phase established the main baseline that later 1D models had to catch up to.
+
+---
+
+## 7. Phase B Results: 1D Raw EEG Expansion
+
+The next major direction was direct raw EEG modeling.
+
+### 7.1 Early 1D Results
+
+Representative early 1D runs from W&amp;B:
+
+| Model | Early Accuracy | Early Macro-F1 | Interpretation |
+|------|------:|------:|------|
+| `snn_1d_lif` | **42.74%** | 0.320 | weak early raw-SNN baseline |
+| `snn_1d_attn` | **46.68%** | 0.377 | attention helped somewhat |
+| `spiking_vit_1d` | **20.42%** | 0.125 | poor final result in mature tracked run |
+| `quantum_1d_full_RXY` | **54.56%** | 0.446 | one of the best 1D quantum runs |
+| `quantum_1d_ring_RYZ` | **53.99%** | 0.436 | another top 1D quantum variant |
+
+There were also some very early exploratory 1D runs with strange class behavior and poor macro-F1 despite higher raw accuracy. Those should be treated as unstable exploratory runs rather than final baselines.
+
+### 7.2 Main Interpretation of the 1D Phase
+
+- raw EEG was clearly harder than 2D scalograms
+- 1D quantum models initially looked more competitive than 1D SNNs
+- `spiking_vit_1d` did not become a strong direction
+- this phase justified later work on:
+  - better training
+  - better 1D SNN design
+  - multimodal fusion
+
+---
+
+## 8. Phase C Results: Latest Improved Runs
+
+The latest focused rerun group is the one most relevant for current reporting.
+
+### 8.1 Latest Finished Rerun Results
+
+These are the finished later paper-style runs from the latest W&amp;B CSV:
+
+| Rank | Model | Modality | Best Accuracy | Best Macro-F1 | Best AUC | Notes |
+|------|------|------|------:|------:|------:|------|
+| 1 | `fusion_b` | 2D fusion | **82.44%** | 0.679 | 0.935 | best finished latest run |
+| 2 | `fusion_a` | 2D fusion | **80.79%** | 0.684 | 0.947 | strong, stable fusion rerun |
+| 3 | `convnext` | 2D | **80.50%** | 0.658 | 0.937 | strongest finished classical rerun |
+| 4 | `snn_1d_attn` | 1D | **75.76%** | 0.638 | 0.933 | strongest finished raw 1D rerun |
+| 5 | `quantum_ring_RXY` | 2D quantum | **75.05%** | 0.635 | 0.944 | focused rerun of top quantum family |
+| 6 | `quantum_full_RXY` | 2D quantum | **73.79%** | 0.623 | 0.940 | focused rerun of top quantum family |
+| 7 | `snn_1d_lif` | 1D | **73.73%** | 0.616 | 0.931 | major improvement over earlier runs |
+| 8 | `swin` | 2D | **70.65%** | 0.600 | 0.928 | lower than historical Swin peak |
+| 9 | `snn_lif_resnet` | 2D SNN | **67.47%** | 0.569 | 0.902 | strongest finished 2D spiking rerun |
+| 10 | `snn_lif_vit` | 2D SNN | **60.57%** | 0.516 | 0.868 | weaker than ResNet-based spiking path |
+| 11 | `tcanet` | 1D | **52.22%** | 0.195 | 0.487 | integrated but not yet competitive |
+
+### 8.2 Main Positive Development
+
+The most important progress in the latest phase is the raw 1D branch:
+
+| Model | Earlier Accuracy | Latest Accuracy | Gain |
+|------|------:|------:|------:|
+| `snn_1d_lif` | 42.74% | **73.73%** | **+30.99** |
+| `snn_1d_attn` | 46.68% | **75.76%** | **+28.88** |
+
+This is one of the central scientific findings of the whole project.
+
+### 8.3 Important Nuance on 2D Quantum and Classical Models
+
+Some later focused reruns are numerically below earlier historical peaks.
+
+Examples:
+
+| Model | Historical Peak | Latest Focused Rerun |
+|------|------:|------:|
+| `swin` | 84.62% | 70.65% |
+| `quantum_ring_RXY` | 83.98% | 75.05% |
+| `quantum_full_RXY` | 83.43% | 73.79% |
+| `convnext` | 83.11% | 80.50% |
+
+This should not be framed as “the models got worse.” More likely it reflects:
+
+- different run configuration
+- better controlled reruns
+- changed subset or split behavior
+- paper-style filtering of the model list
+
+The mentor-safe interpretation is:
+
+&gt; the newer reruns made the comparison cleaner and greatly improved the 1D branch, but the project still needs standardized reruns before comparing historical bests and later paper-style results as if they were directly identical.
+
+---
+
+## 9. Fusion Models and Fusion Strategies
+
+Fusion is one of the most important parts of this project because it is where the core research hypothesis becomes strongest.
+
+### 9.1 Why Fusion Became Important
+
+The project repeatedly showed:
+
+- 2D scalograms carry strong spectral structure
+- raw 1D EEG carries useful temporal information
+- 1D was initially weak, but later became much stronger
+
+That naturally leads to the idea that:
+
+- 1D and 2D are complementary
+- the best final model may be a fusion model rather than a single branch
+
+### 9.2 `fusion_a`: Dual 2D Fusion
+
+**Model:** `fusion_a`
+
+Structure:
+
+- Swin branch
+- ConvNeXt branch
+- gated fusion head
+
+Interpretation:
+
+- this is a **2D-only fusion**
+- it mixes transformer-style and convolutional 2D features
+
+Results:
+
+- historical run: **82.01%**
+- latest focused rerun: **80.79%**
+- consistently one of the cleanest and strongest models in the project
+
+Architecture summary:
+
+- Input: 2D EEG scalogram
+- Branch 1: Swin extracts transformer-style windowed spatial features
+- Branch 2: ConvNeXt extracts hierarchical convolutional features
+- Fusion: a gated fusion module learns how much each branch should contribute
+- Head: fused representation goes to the final classifier
+
+Why it is strong:
+
+- Swin and ConvNeXt learn different but complementary views of the same scalogram
+- the gate allows the model to adaptively emphasize the more useful branch
+
+### 9.3 `fusion_b`: 4-Way 2D Hybrid Fusion
+
+**Model:** `fusion_b`
+
+Structure:
+
+- Swin branch
+- ConvNeXt branch
+- DeiT branch
+- quantum branch
+- multi-stream fusion head
+
+Interpretation:
+
+- this is the most ambitious completed **2D-only fusion** model
+- it combines several distinct feature types into one head
+
+Result:
+
+- **82.44% accuracy**
+- **0.679 macro-F1**
+- best finished latest rerun in the CSV
+
+Architecture summary:
+
+- Input: 2D EEG scalogram
+- Branch 1: Swin for windowed transformer features
+- Branch 2: ConvNeXt for hierarchical CNN features
+- Branch 3: DeiT for compact global transformer features
+- Branch 4: quantum branch for quantum-compressed representation learning
+- Fusion: a multi-stream fusion head combines all four embeddings before classification
+
+Why it is strong:
+
+- it is the richest completed ensemble of distinct inductive biases in the project
+- instead of trusting one representation style, it combines several strong 2D experts
+
+### 9.4 `fusion_c`: Multi-Modal Raw + Spectral Fusion
+
+**Model:** `fusion_c`
+
+Original conceptual description:
+
+- raw EEG branch
+- 2D scalogram branch
+- gated fusion between temporal and spectral features
+
+Important code clarification:
+
+- the conceptual label originally referenced Swin
+- the current implementation uses **EfficientNet-B0** on the 2D branch for speed
+- the 1D branch uses **SNN-1D-Attention**
+
+So the actual current design is:
+
+- 1D raw EEG via SNN-1D-Attention
+- 2D scalogram via EfficientNet-B0
+- gated multimodal fusion head
+
+Status in W&amp;B:
+
+- **currently running**
+- not yet available as a finalized comparison number in the CSV
+
+Why it matters:
+
+- this is the most direct test of the project’s central multimodal hypothesis
+
+Architecture summary:
+
+- Input A: raw EEG sequence
+- Input B: scalogram image of the same epoch
+- Raw branch: `snn_1d_attn` extracts temporal features directly from the waveform
+- 2D branch: EfficientNet-B0 extracts compact spectral features from the scalogram
+- Projection: both branches are projected into a common embedding dimension
+- Fusion: a gated multimodal fusion module combines the two embeddings
+- Head: fused representation is classified into the 5 sleep stages
+
+Why it matters scientifically:
+
+- this is the cleanest architecture for asking whether temporal and spectral EEG views are complementary enough to beat single-branch models
+
+### 9.5 `snn_fusion_early`
+
+**Model:** `snn_fusion_early`
+
+Concept:
+
+- features from the 1D and 2D branches are fused before final classification
+- strongest feature mixing among the SNN fusion family
+
+Status:
+
+- present in W&amp;B
+- marked finished
+- but the CSV row does not contain a clean final metric summary
+
+Interpretation:
+
+- it should be mentioned as **tried**
+- but not treated as a benchmark result on the same level as `fusion_a` or `fusion_b`
+
+### 9.6 `snn_fusion_late`
+
+**Model:** `snn_fusion_late`
+
+Concept:
+
+- each branch predicts separately
+- predictions are combined later as an ensemble
+
+Status:
+
+- present in W&amp;B
+- **crashed**
+
+Interpretation:
+
+- this is a tried architecture idea, but not a completed benchmark result
+
+### 9.7 `snn_fusion_gated`
+
+**Model:** `snn_fusion_gated`
+
+Concept:
+
+- adaptive routing between the two modalities
+- tries to learn when each branch should dominate
+
+Status:
+
+- implemented in the repo
+- **no clean W&amp;B run appears in the latest CSV**
+
+Interpretation:
+
+- include it in the report as an implemented branch
+- do not present it as a completed empirical result
+
+### 9.8 `quantum_snn_fusion_early`
+
+Concept:
+
+- combine raw SNN features and quantum-processed 2D features through early fusion
+
+Status:
+
+- implemented in the repo
+- **no clean W&amp;B run in the latest CSV**
+
+Interpretation:
+
+- active architecture direction
+- not yet a benchmark result
+
+### 9.9 `quantum_snn_fusion_gated`
+
+Concept:
+
+- adaptive multimodal fusion between raw SNN and quantum 2D features
+
+Status:
+
+- implemented in the repo
+- **no clean W&amp;B run in the latest CSV**
+
+Interpretation:
+
+- one of the more novel research directions in the codebase
+- should be reported as present and important, but not yet completed empirically
+
+### 9.10 Architecture Notes on Other Important Models
+
+The following single-branch models are also important to understand because they anchor the benchmark.
+
+#### `convnext`
+
+Architecture summary:
+
+- Input: 2D EEG scalogram
+- Backbone: ConvNeXt-Tiny
+- Processing style: modernized convolutional hierarchy with patch-style stem, depthwise blocks, and stage-wise feature abstraction
+- Head: pooled feature vector followed by classifier
+
+Why it matters:
+
+- it is one of the strongest pure classical baselines
+- it shows that a well-tuned CNN can remain highly competitive even against transformers and fusion models
+
+#### `snn_1d_attn`
+
+Architecture summary:
+
+- Input: raw EEG signal
+- Backbone: 1D spiking network
+- Temporal modeling: spike-based temporal feature extraction over the raw sequence
+- Attention: an attention block helps the model focus on the most informative temporal segments or channels
+- Head: final feature vector is classified into sleep stages
+
+Why it matters:
+
+- it is the strongest finished raw 1D model in the latest rerun set
+- it demonstrates that raw EEG can work well without forcing everything through a 2D transform
+
+#### `quantum_ring_RXY` and `quantum_full_RXY`
+
+Architecture summary:
+
+- Input: 2D EEG scalogram
+- Front-end: classical 2D feature extractor
+- Bottleneck: quantum-inspired circuit layer with `RXY` rotations
+- Entanglement:
+  - `ring` connects qubits locally in a loop
+  - `full` uses denser all-to-all style entanglement
+- Head: quantum-transformed features are sent to the final classifier
+
+Why they matter:
+
+- these are the focused quantum candidates selected from the larger 14-model sweep
+- they represent the main quantum benchmark line in the later paper-style runs
+
+#### `tcanet`
+
+Architecture summary:
+
+- Input: raw EEG signal
+- Core idea: temporal convolution and attention-style processing specialized for EEG sequence modeling
+- Current repo direction: integrated as a clean raw-signal architecture and extended with a real quantum bottleneck path
+- Head: learned temporal representation goes to the final sleep-stage classifier
+
+Why it matters:
+
+- even though current BOAS results are not yet strong, it remains a strategically important architecture because it is a more EEG-specialized temporal model than the generic baseline families
+
+---
+
+## 10. Status Summary: Completed vs In-Progress vs Implemented
+
+### 10.1 Completed and Tracked with Usable Metrics
+
+- `snn_lif_resnet`
+- `snn_qif_resnet`
+- `snn_lif_vit`
+- `snn_qif_vit`
+- `swin`
+- `vit`
+- `deit`
+- `efficientnet`
+- `convnext`
+- all 14 2D quantum variants
+- `snn_1d_lif`
+- `snn_1d_attn`
+- `spiking_vit_1d`
+- all 14 1D quantum variants
+- `fusion_a`
+- `fusion_b`
+- `tcanet`
+
+### 10.2 In Progress or Incomplete
+
+- `fusion_c`:
+  - active running experiment in latest CSV
+- `snn_fusion_early`:
+  - finished state but without clean usable final metric summary in the export
+- `snn_fusion_late`:
+  - crashed
+
+### 10.3 Implemented in the Repo but Not Represented by a Clean W&amp;B Benchmark in the Latest CSV
+
+- `snn_fusion_gated`
+- `quantum_snn_fusion_early`
+- `quantum_snn_fusion_gated`
+
+This distinction is important for mentor discussion because it prevents overstating what is already empirically finished.
+
+---
+
+## 11. Main Findings to Present
+
+### 11.1 2D Scalograms Are the Strongest Overall Foundation
+
+Across the full project history, the best historical values are mostly from:
+
+- strong 2D classical backbones
+- 2D quantum variants
+- 2D fusion models
+
+### 11.2 Raw 1D EEG Became Much More Credible in the Newer Runs
+
+The jump in 1D SNN performance is one of the strongest findings in the project:
+
+- raw 1D is no longer just a weak exploratory branch
+- it is now a serious contributor
+- this makes multimodal fusion scientifically meaningful
+
+### 11.3 Fusion Is the Most Promising Endgame
+
+Fusion matters because:
+
+- 2D is strong
+- 1D improved sharply
+- the modalities are complementary
+
+That makes the fusion family the cleanest route to a final “best system” story.
+
+### 11.4 Best Finished Latest Rerun
+
+As of the latest CSV:
+
+- **best finished latest rerun = `fusion_b`**
+- accuracy = **82.44%**
+- macro-F1 = **0.679**
+
+### 11.5 Strong Historical Models Still Need Standardized Reruns
+
+The project still needs a final standardized comparison among:
+
+- top 2D classical models
+- top 2D quantum models
+- top 1D SNN models
+- top fusion models
+
+This is necessary because historical bests and later focused reruns were not all produced under one perfectly unified setup.
+
+---
+
+## 12. Recommended Next Steps
+
+The most useful next steps are:
+
+1. Finalize `fusion_c` and obtain a stable completed metric table.
+2. Run clean benchmarked versions of:
+   - `fusion_b`
+   - `fusion_a`
+   - `convnext`
+   - `snn_1d_attn`
+   - `snn_1d_lif`
+   - top quantum 2D variants
+3. Decide whether the weaker branches should stay in the final paper table:
+   - `spiking_vit_1d`
+   - QIF variants
+   - TCANet in its current form
+4. Add clean benchmark runs for the implemented-but-not-yet-reported fusion branches:
+   - `snn_fusion_gated`
+   - `quantum_snn_fusion_early`
+   - `quantum_snn_fusion_gated`
+5. Extend the validated pipeline beyond BOAS to Sleep-EDF for generalization testing.
+
+---
+
+## 13. Final Summary
+
+This project has grown from an exploratory benchmark into a fairly rich EEG sleep staging research platform.
+
+The major milestones so far are:
+
+- a strong 2D scalogram benchmark foundation
+- a complete 2D quantum sweep
+- a complete 1D quantum sweep
+- major improvement in raw 1D SNN performance
+- several fusion strategies, with `fusion_b` currently the best finished latest rerun
+- `fusion_c` as the most important active multimodal experiment
+- additional fusion architectures already implemented and ready for fuller benchmarking
+
+If summarized in one sentence:
+
+&gt; The project shows that 2D spectral modeling has been the strongest overall base, raw 1D modeling has improved enough to become genuinely useful, and multimodal fusion is now the most promising route to the final best-performing sleep staging system.
+</template>
+</body>
+</html>

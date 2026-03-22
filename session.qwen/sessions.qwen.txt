@@ -3,3 +3,6 @@ run qwen --resume 220c79d9-5def-4f44-bf13-ce61176df209
 codex resume 019d11a0-ee76-7200-aff8-732c2852abf8 -> NeuroAid
 
 qwen --resume 29ed8e21-644d-48d6-b836-3097dcb597be -> BreastCancer
+
+codex resume 019d167b-e300-7010-bdb3-56ea8fb380d5 -> EEG
+

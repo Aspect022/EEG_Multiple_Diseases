@@ -171,7 +171,7 @@ echo ""
 echo "[STEP 3/5] Sleep-EDF Download"
 echo "-----------------------------"
 
-verify_sleep_edf() {
+verify_dataset() {
     if python - <<PY
 from src.data.sleep_edf_dataset import MIN_RECOMMENDED_RECORD_PAIRS, verify_sleep_edf_dataset
 import sys
@@ -206,7 +206,7 @@ print(
 PY
 }
 
-download_sleep_edf() {
+download_with_wget() {
     echo "  Downloading from PhysioNet: $SLEEP_EDF_URL"
     wget \
         -r -N -c -np -nH --cut-dirs=3 \
@@ -216,38 +216,41 @@ download_sleep_edf() {
         -P "$DATA_DIR"
 }
 
-attempt=1
-while true; do
-    if verify_sleep_edf; then
-        echo "  Dataset ready."
-        break
-    fi
+retry_until_complete() {
+    local attempt=1
 
-    report_sleep_edf_status
-    if [ "$MAX_DOWNLOAD_ATTEMPTS" -gt 0 ] && [ "$attempt" -gt "$MAX_DOWNLOAD_ATTEMPTS" ]; then
-        echo "  FATAL: Reached max download attempts ($MAX_DOWNLOAD_ATTEMPTS) before dataset became ready."
-        exit 1
-    fi
+    while true; do
+        if verify_dataset; then
+            echo "  Dataset ready."
+            return 0
+        fi
 
-    echo "  Download attempt $attempt..."
-    if download_sleep_edf; then
-        echo "  Download attempt $attempt finished."
-    else
-        echo "  Download attempt $attempt ended with wget errors; will retry after ${DOWNLOAD_RETRY_SLEEP}s."
-    fi
+        report_sleep_edf_status
+        if [ "$MAX_DOWNLOAD_ATTEMPTS" -gt 0 ] && [ "$attempt" -gt "$MAX_DOWNLOAD_ATTEMPTS" ]; then
+            echo "  FATAL: Reached max download attempts ($MAX_DOWNLOAD_ATTEMPTS) before dataset became ready."
+            return 1
+        fi
 
-    if verify_sleep_edf; then
-        echo "  Dataset ready after download attempt $attempt."
-        break
-    fi
+        echo "  Download attempt $attempt..."
+        if download_with_wget; then
+            echo "  Download attempt $attempt finished."
+        else
+            echo "  Download attempt $attempt ended with wget errors; will retry after ${DOWNLOAD_RETRY_SLEEP}s."
+        fi
 
-    report_sleep_edf_status
-    echo "  Dataset still incomplete. Sleeping ${DOWNLOAD_RETRY_SLEEP}s before retry..."
-    sleep "$DOWNLOAD_RETRY_SLEEP"
-    attempt=$((attempt + 1))
-done
+        if verify_dataset; then
+            echo "  Dataset ready after download attempt $attempt."
+            return 0
+        fi
 
-if ! verify_sleep_edf; then
+        report_sleep_edf_status
+        echo "  Dataset still incomplete. Sleeping ${DOWNLOAD_RETRY_SLEEP}s before retry..."
+        sleep "$DOWNLOAD_RETRY_SLEEP"
+        attempt=$((attempt + 1))
+    done
+}
+
+if ! retry_until_complete; then
     echo "  FATAL: Sleep-EDF download/verification failed."
     exit 1
 fi
