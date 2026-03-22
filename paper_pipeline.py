@@ -43,7 +43,8 @@ MODEL_PRESETS = {
         'fusion_a',  # Already done, will skip fast
         'fusion_c',  # LAST - slow, crashed before
     ],
-    # Extended: Core + transformer baselines + SNN fusion (15 models, ~15 hours)
+    # Extended: Core + transformer baselines + SNN fusion (14 models, ~14 hours)
+    # Note: spiking_vit_1d removed - not actually spiking, poor performance (10%)
     'extended': [
         'tcanet',  # NEW - runs first
         'snn_lif_resnet',

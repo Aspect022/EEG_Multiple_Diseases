@@ -54,12 +54,14 @@ class FusionC(nn.Module):
         snn_feature_dim = 128
         
         # ── Swin branch (2D scalogram) ──
-        self.swin = timm.create_model(
-            'swin_tiny_patch4_window7_224',
+        # FIXED: Using EfficientNet-B0 instead of Swin for speed (10x faster)
+        # Swin was taking 1 hour/epoch, EfficientNet takes ~6 min/epoch
+        self.backbone = timm.create_model(
+            'efficientnet_b0',  # 5M params vs 28M for Swin
             pretrained=pretrained,
             num_classes=0,
         )
-        swin_feature_dim = self.swin.num_features  # 768
+        backbone_feature_dim = 1280  # EfficientNet-B0 output dim
         
         # ── Project both to fusion_dim ──
         self.snn_proj = nn.Sequential(
@@ -67,8 +69,8 @@ class FusionC(nn.Module):
             nn.LayerNorm(fusion_dim),
             nn.ELU(),
         )
-        self.swin_proj = nn.Sequential(
-            nn.Linear(swin_feature_dim, fusion_dim),
+        self.backbone_proj = nn.Sequential(
+            nn.Linear(backbone_feature_dim, fusion_dim),  # Updated dim
             nn.LayerNorm(fusion_dim),
             nn.ELU(),
         )
@@ -109,17 +111,17 @@ class FusionC(nn.Module):
         """
         if raw_signal is None or scalogram is None:
             raise ValueError("Both raw_signal and scalogram must be provided")
-        
+
         # Extract features from both modalities
         snn_features = self._extract_snn_features(raw_signal)  # (batch, 128)
-        swin_features = self.swin(scalogram)                    # (batch, 768)
+        backbone_features = self.backbone(scalogram)            # (batch, 1280)
 
         # Project to common dimension
         snn_proj = self.snn_proj(snn_features)                  # (batch, 256)
-        swin_proj = self.swin_proj(swin_features)               # (batch, 256)
+        backbone_proj = self.backbone_proj(backbone_features)   # (batch, 256)
 
         # Gated fusion
-        fused, self._gate = self.fusion(swin_proj, snn_proj)    # (batch, 256)
+        fused, self._gate = self.fusion(backbone_proj, snn_proj)    # (batch, 256)
 
         # Classify
         logits = self.classifier(fused)

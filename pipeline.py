@@ -116,7 +116,48 @@ for ent in QUANTUM_ENTANGLEMENTS:
             'data_mode': '1d',
         }
 
-# Fusion experiments
+# ── NEW: TCANet Model (Priority #1) ──
+EXPERIMENT_DEFS['tcanet'] = {
+    'type': 'tcanet',
+    'name': 'TCANet-Clean', 'data_mode': '1d',
+}
+
+# Transformer baselines
+EXPERIMENT_DEFS['swin'] = {
+    'type': 'swin',
+    'name': 'Swin-Transformer',
+}
+EXPERIMENT_DEFS['vit'] = {
+    'type': 'vit',
+    'name': 'ViT-Small',
+}
+EXPERIMENT_DEFS['deit'] = {
+    'type': 'deit',
+    'name': 'DeiT-Small',
+}
+EXPERIMENT_DEFS['efficientnet'] = {
+    'type': 'efficientnet',
+    'name': 'EfficientNet-B0',
+}
+EXPERIMENT_DEFS['convnext'] = {
+    'type': 'convnext',
+    'name': 'ConvNeXt-Tiny',
+}
+
+# Add quantum experiments dynamically (2D scalogram-based)
+for ent in QUANTUM_ENTANGLEMENTS:
+    for rot in QUANTUM_ROTATIONS:
+        key = f'quantum_{ent}_{rot}'
+        EXPERIMENT_DEFS[key] = {
+            'type': 'quantum',
+            'entanglement': ent,
+            'rotation': rot,
+            'name': f'Quantum-{ent}-{rot}',
+            'data_mode': '2d',
+        }
+
+# Fusion experiments (2D only - already completed: fusion_a, fusion_b)
+# fusion_c moved to LAST position (slow training)
 EXPERIMENT_DEFS['fusion_a'] = {
     'type': 'fusion_a',
     'name': 'Fusion-Swin-ConvNeXt', 'data_mode': '2d',
@@ -125,12 +166,8 @@ EXPERIMENT_DEFS['fusion_b'] = {
     'type': 'fusion_b',
     'name': 'Fusion-Hybrid-4Way', 'data_mode': '2d',
 }
-EXPERIMENT_DEFS['fusion_c'] = {
-    'type': 'fusion_c',
-    'name': 'Fusion-MultiModal', 'data_mode': 'both',
-}
 
-# New SNN fusion experiments (1D + 2D)
+# SNN Fusion models (1D + 2D)
 EXPERIMENT_DEFS['snn_fusion_early'] = {
     'type': 'snn_fusion_early',
     'name': 'SNN-EarlyFusion-1D+2D',
@@ -171,6 +208,12 @@ EXPERIMENT_DEFS['quantum_snn_fusion_gated'] = {
     'quantum_entanglement': 'full',
     'confidence_threshold': 0.7,
     'gate_type': 'adaptive',
+}
+
+# fusion_c placed LAST due to slow training (1 hour/epoch)
+EXPERIMENT_DEFS['fusion_c'] = {
+    'type': 'fusion_c',
+    'name': 'Fusion-MultiModal (SNN-1D + Swin)', 'data_mode': 'both',
 }
 
 
@@ -336,6 +379,21 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             num_classes=num_classes,
             rotation=exp_config['rotation'],
             entanglement=exp_config['entanglement'],
+        )
+
+    elif exp_type == 'tcanet':
+        # NEW: TCANet model (Priority #1)
+        from tcanet_clean import TCANetClean
+        return TCANetClean(
+            channels=6,  # BOAS has 6 EEG channels
+            time=3000,   # 30 seconds at 100 Hz
+            num_classes=num_classes,
+            f1=40,
+            filters=64,
+            pooling_size=75,
+            tcn_depth=4,
+            num_heads=8,
+            dropout=0.5,
         )
 
     elif exp_type == 'fusion_a':

@@ -449,34 +449,41 @@ class SNNFusionEarlyComplete(nn.Module):
     """
     Complete early fusion model with 1D and 2D feature extractors.
     
-    Accepts raw_signal and scalogram as input.
+    FIXED: Simplified classifier with LayerNorm for stable gradients.
     """
-    
+
     def __init__(self, model_1d: nn.Module, model_2d: nn.Module,
-                 num_classes: int = 5, dim_1d: int = 128, 
+                 num_classes: int = 5, dim_1d: int = 128,
                  dim_2d: int = 512, fusion_dim: int = 256):
         super().__init__()
         self.model_1d = model_1d
         self.model_2d = model_2d
-        
+
+        # FIXED: Simplified classifier with LayerNorm
         self.fusion_classifier = nn.Sequential(
             nn.Linear(dim_1d + dim_2d, fusion_dim),
-            nn.BatchNorm1d(fusion_dim),
-            nn.ReLU(inplace=True),
+            nn.LayerNorm(fusion_dim),  # Changed from BatchNorm
+            nn.GELU(),
             nn.Dropout(0.3),
-            nn.Linear(fusion_dim, fusion_dim // 2),
-            nn.BatchNorm1d(fusion_dim // 2),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.2),
-            nn.Linear(fusion_dim // 2, num_classes),
+            nn.Linear(fusion_dim, num_classes),  # Direct to classes
         )
+        
+        self._initialize_weights()
     
+    def _initialize_weights(self):
+        """Initialize weights with Xavier uniform."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
     def forward(self, raw_signal: torch.Tensor = None,
                 scalogram: torch.Tensor = None,
                 **kwargs) -> torch.Tensor:
         """
         Forward pass with feature extraction.
-        
+
         Args:
             raw_signal: Raw 1D EEG (batch, channels, time)
             scalogram: 2D scalogram (batch, channels, height, width)
@@ -485,6 +492,10 @@ class SNNFusionEarlyComplete(nn.Module):
         features_1d = _extract_branch_features(self.model_1d, raw_signal)
         features_2d = _extract_branch_features(self.model_2d, scalogram)
         
+        # Validate dimensions
+        assert features_1d.shape[1] == 128, f"Expected 128, got {features_1d.shape[1]}"
+        assert features_2d.shape[1] == 512, f"Expected 512, got {features_2d.shape[1]}"
+
         # Fuse and classify
         fused = torch.cat([features_1d, features_2d], dim=1)
         return self.fusion_classifier(fused)
@@ -493,6 +504,8 @@ class SNNFusionEarlyComplete(nn.Module):
 class SNNFusionLateComplete(nn.Module):
     """
     Complete late fusion model with independent 1D and 2D branches.
+    
+    FIXED: Changed from log-softmax fusion to stable logit fusion.
     """
     
     def __init__(self, model_1d: nn.Module, model_2d: nn.Module,
@@ -502,31 +515,28 @@ class SNNFusionLateComplete(nn.Module):
         self.model_2d = model_2d
         self.num_classes = num_classes
         
-        # Learnable weight for combining branches
-        self.weight_1d = nn.Parameter(torch.tensor(0.5))
-        self.weight_2d = nn.Parameter(torch.tensor(0.5))
+        # Single learnable parameter for fusion weight
+        # alpha=0 → use only 2D, alpha=1 → use only 1D
+        self.alpha = nn.Parameter(torch.tensor(0.5))
     
     def forward(self, raw_signal: torch.Tensor = None,
                 scalogram: torch.Tensor = None,
                 **kwargs) -> torch.Tensor:
         """
-        Forward pass with late fusion.
+        Forward pass with stable logit fusion.
+        
+        FIXED: Returns weighted average of logits instead of log(probs).
+        This prevents gradient vanishing that caused 10% accuracy.
         """
         # Get logits from both branches
         logits_1d = self.model_1d(raw_signal)
         logits_2d = self.model_2d(scalogram)
         
-        # Weighted average of probabilities
-        probs_1d = F.softmax(logits_1d, dim=1)
-        probs_2d = F.softmax(logits_2d, dim=1)
+        # Stable weighted logit fusion
+        alpha = torch.sigmoid(self.alpha)
+        fused_logits = alpha * logits_1d + (1 - alpha) * logits_2d
         
-        w1 = torch.sigmoid(self.weight_1d)
-        w2 = torch.sigmoid(self.weight_2d)
-        total = w1 + w2
-        w1, w2 = w1 / total, w2 / total
-        
-        fused_probs = w1 * probs_1d + w2 * probs_2d
-        return torch.log(fused_probs + 1e-8)
+        return fused_logits  # CrossEntropyLoss handles softmax
 
 
 class SNNFusionGatedComplete(nn.Module):
