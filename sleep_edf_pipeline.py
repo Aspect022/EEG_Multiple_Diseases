@@ -45,7 +45,6 @@ STABLE_MODELS = [
     "quantum_full_RXY",
     "fusion_a",
     "fusion_b",
-    "fusion_c",
 ]
 
 RISKY_MODELS = [
@@ -57,6 +56,7 @@ RISKY_MODELS = [
     "snn_fusion_gated",
     "quantum_snn_fusion_early",
     "quantum_snn_fusion_gated",
+    "fusion_c",
 ]
 
 
