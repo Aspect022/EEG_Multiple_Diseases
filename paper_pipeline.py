@@ -2,10 +2,14 @@
 """
 Paper-focused BOAS sleep-staging pipeline.
 
-Runs only the models that are currently worth comparing after the core
-multi-modal and fusion fixes. This intentionally excludes known-bad or
-exploratory variants such as QIF, broken 1D ViT-style spiking models, and
-unfinished quantum-spiking fusion heads.
+Runs only the important models for paper comparison:
+1. TCANet (NEW - runs FIRST, fast ~10 min/epoch)
+2. Core baselines (SNN, 1D SNN, Transformers)
+3. Quantum baselines (best performers)
+4. Fusion models (best performers)
+5. fusion_c (LAST - slow 1hr/epoch)
+
+Skips: QIF variants, broken 1D ViT, failed quantum-spiking fusion
 """
 
 import argparse
@@ -17,36 +21,55 @@ from pipeline import EXPERIMENT_DEFS, generate_summary, run_experiment, verify_d
 
 
 MODEL_PRESETS = {
-    'core': [
+    # Minimal: TCANet + core baselines + fusion_c (6 models, ~6 hours)
+    'minimal': [
+        'tcanet',  # NEW - runs first
         'snn_lif_resnet',
-        'snn_1d_lif',
         'snn_1d_attn',
-        'swin',
         'convnext',
         'quantum_ring_RXY',
-        'fusion_a',
-        'fusion_c',
+        'fusion_c',  # LAST - slow
     ],
+    # Core: TCANet + all important baselines + fusion models (10 models, ~10 hours)
+    'core': [
+        'tcanet',  # NEW - runs first
+        'snn_lif_resnet',
+        'snn_lif_vit',
+        'snn_1d_lif',
+        'snn_1d_attn',
+        'convnext',
+        'quantum_ring_RXY',
+        'quantum_full_RXY',
+        'fusion_a',  # Already done, will skip fast
+        'fusion_c',  # LAST - slow, crashed before
+    ],
+    # Extended: Core + transformer baselines + SNN fusion (15 models, ~15 hours)
     'extended': [
+        'tcanet',  # NEW - runs first
         'snn_lif_resnet',
         'snn_lif_vit',
         'snn_1d_lif',
         'snn_1d_attn',
         'swin',
+        'vit',
+        'deit',
+        'efficientnet',
         'convnext',
         'quantum_ring_RXY',
         'quantum_full_RXY',
-        'fusion_a',
-        'fusion_c',
+        'fusion_a',  # Already done
+        'snn_fusion_gated',  # NEW
+        'fusion_c',  # LAST - slow, crashed before
     ],
+    # Fusion ablation: All fusion models for comparison
     'fusion_ablation': [
-        'snn_1d_attn',
-        'snn_lif_resnet',
-        'fusion_a',
-        'fusion_c',
-        'snn_fusion_early',
-        'snn_fusion_late',
-        'snn_fusion_gated',
+        'snn_1d_attn',  # 1D baseline
+        'snn_lif_resnet',  # 2D baseline
+        'fusion_a',  # 2D fusion (already done)
+        'snn_fusion_early',  # Rerun (failed before)
+        'snn_fusion_late',  # Rerun (crashed)
+        'snn_fusion_gated',  # NEW
+        'fusion_c',  # LAST - slow, crashed before
     ],
 }
 
