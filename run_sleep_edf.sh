@@ -47,6 +47,8 @@ INSTALL_OPTIONAL_QUANTUM="${INSTALL_OPTIONAL_QUANTUM:-0}"
 VALIDATE_FIRST="${VALIDATE_FIRST:-1}"
 NO_PRETRAINED="${NO_PRETRAINED:-0}"
 SLEEP_EDF_URL="${SLEEP_EDF_URL:-https://physionet.org/files/sleep-edfx/1.0.0/}"
+DOWNLOAD_RETRY_SLEEP="${DOWNLOAD_RETRY_SLEEP:-60}"
+MAX_DOWNLOAD_ATTEMPTS="${MAX_DOWNLOAD_ATTEMPTS:-0}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -85,6 +87,8 @@ echo "  Output Dir:   $OUTPUT_DIR"
 echo "  Max Records:  ${MAX_RECORDS:-all}"
 echo "  Torch Wheel:  $TORCH_CHANNEL"
 echo "  Venv:         $VENV_DIR"
+echo "  DL Retry:     ${DOWNLOAD_RETRY_SLEEP}s"
+echo "  DL Attempts:  ${MAX_DOWNLOAD_ATTEMPTS} (0=infinite)"
 echo "  Started:      $(date)"
 echo "======================================================================"
 
@@ -168,19 +172,41 @@ echo "[STEP 3/5] Sleep-EDF Download"
 echo "-----------------------------"
 
 verify_sleep_edf() {
-    local psg_count hyp_count
-    psg_count=$(find "$DATA_DIR" -type f -name "*PSG.edf" 2>/dev/null | wc -l | tr -d ' ')
-    hyp_count=$(find "$DATA_DIR" -type f -name "*Hypnogram.edf" 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$psg_count" -ge 1 ] && [ "$hyp_count" -ge 1 ]; then
-        echo "  [OK] Sleep-EDF present: $psg_count PSG, $hyp_count hypnograms"
+    if python - <<PY
+from src.data.sleep_edf_dataset import MIN_RECOMMENDED_RECORD_PAIRS, verify_sleep_edf_dataset
+import sys
+
+data_dir = r"""$DATA_DIR"""
+if verify_sleep_edf_dataset(data_dir):
+    print(f"  [OK] Sleep-EDF present with at least {MIN_RECOMMENDED_RECORD_PAIRS} matched pairs")
+    sys.exit(0)
+sys.exit(1)
+PY
+    then
         return 0
     fi
     return 1
 }
 
-if verify_sleep_edf; then
-    echo "  Dataset already available."
-else
+report_sleep_edf_status() {
+    python - <<PY
+from pathlib import Path
+from src.data.sleep_edf_dataset import _discover_record_pairs, MIN_RECOMMENDED_RECORD_PAIRS
+
+root = Path(r"""$DATA_DIR""")
+pairs = _discover_record_pairs(root) if root.exists() else []
+psg_count = len(list(root.rglob("*PSG.edf"))) if root.exists() else 0
+hyp_count = len(list(root.rglob("*Hypnogram.edf"))) if root.exists() else 0
+subjects = len({pair["subject_id"] for pair in pairs})
+print(
+    f"  Current dataset status: {len(pairs)} matched pairs, "
+    f"{subjects} subjects, {psg_count} PSG, {hyp_count} hypnograms "
+    f"(recommended minimum pairs: {MIN_RECOMMENDED_RECORD_PAIRS})"
+)
+PY
+}
+
+download_sleep_edf() {
     echo "  Downloading from PhysioNet: $SLEEP_EDF_URL"
     wget \
         -r -N -c -np -nH --cut-dirs=3 \
@@ -188,7 +214,38 @@ else
         --retry-connrefused --waitretry=5 --read-timeout=20 --timeout=30 -t 0 \
         "$SLEEP_EDF_URL" \
         -P "$DATA_DIR"
-fi
+}
+
+attempt=1
+while true; do
+    if verify_sleep_edf; then
+        echo "  Dataset ready."
+        break
+    fi
+
+    report_sleep_edf_status
+    if [ "$MAX_DOWNLOAD_ATTEMPTS" -gt 0 ] && [ "$attempt" -gt "$MAX_DOWNLOAD_ATTEMPTS" ]; then
+        echo "  FATAL: Reached max download attempts ($MAX_DOWNLOAD_ATTEMPTS) before dataset became ready."
+        exit 1
+    fi
+
+    echo "  Download attempt $attempt..."
+    if download_sleep_edf; then
+        echo "  Download attempt $attempt finished."
+    else
+        echo "  Download attempt $attempt ended with wget errors; will retry after ${DOWNLOAD_RETRY_SLEEP}s."
+    fi
+
+    if verify_sleep_edf; then
+        echo "  Dataset ready after download attempt $attempt."
+        break
+    fi
+
+    report_sleep_edf_status
+    echo "  Dataset still incomplete. Sleeping ${DOWNLOAD_RETRY_SLEEP}s before retry..."
+    sleep "$DOWNLOAD_RETRY_SLEEP"
+    attempt=$((attempt + 1))
+done
 
 if ! verify_sleep_edf; then
     echo "  FATAL: Sleep-EDF download/verification failed."

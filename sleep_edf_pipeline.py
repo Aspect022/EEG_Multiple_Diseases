@@ -19,6 +19,7 @@ import torch
 
 from pipeline import EXPERIMENT_DEFS, create_model, generate_summary
 from src.data.sleep_edf_dataset import (
+    MIN_RECOMMENDED_RECORD_PAIRS,
     create_sleep_edf_dataloaders,
     create_sleep_edf_multimodal_dataloaders,
     verify_sleep_edf_dataset,
@@ -224,6 +225,24 @@ def run_sleep_edf_experiment(
             num_workers=num_workers,
             max_records=max_records,
         )
+        train_size = len(train_loader.dataset)
+        val_size = len(val_loader.dataset)
+        test_size = len(test_loader.dataset)
+        if train_size == 0:
+            raise RuntimeError(
+                "Sleep-EDF training split is empty. The dataset is likely incomplete "
+                "or does not have enough matched PSG/Hypnogram pairs."
+            )
+        if val_size == 0:
+            raise RuntimeError(
+                "Sleep-EDF validation split is empty. Download more matched record pairs "
+                f"(recommended minimum: {MIN_RECOMMENDED_RECORD_PAIRS}) before training."
+            )
+        if test_size == 0:
+            print(
+                "  [WARN] Sleep-EDF test split is empty. Training can continue, but "
+                "final evaluation will be incomplete."
+            )
 
         model = create_model(exp_config, num_classes=5)
         class_weights = compute_class_weights(train_loader.dataset)
@@ -296,7 +315,11 @@ def run_sleep_edf_experiment(
 def main():
     args = parse_args()
     if not verify_sleep_edf_dataset(args.data_dir):
-        raise SystemExit(f"Sleep-EDF dataset not found or incomplete at {args.data_dir}")
+        raise SystemExit(
+            "Sleep-EDF dataset not found or incomplete at "
+            f"{args.data_dir}. Expected at least "
+            f"{MIN_RECOMMENDED_RECORD_PAIRS} matched PSG/Hypnogram pairs."
+        )
 
     experiments = resolve_models(args.models)
     if args.no_pretrained:

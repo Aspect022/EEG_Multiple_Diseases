@@ -40,14 +40,15 @@ CLASS_NAMES = ["W", "N1", "N2", "N3", "REM"]
 EPOCH_DURATION = 30
 DEFAULT_CHANNELS = ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]
 TARGET_NUM_CHANNELS = 6
+MIN_RECOMMENDED_RECORD_PAIRS = 10
 
 
-def verify_sleep_edf_dataset(data_dir: str) -> bool:
-    """Return True when the directory looks like a Sleep-EDF dataset root."""
+def verify_sleep_edf_dataset(data_dir: str, min_pairs: int = MIN_RECOMMENDED_RECORD_PAIRS) -> bool:
+    """Return True when the directory has enough matched Sleep-EDF record pairs."""
     root = Path(data_dir)
-    psg_files = list(root.rglob("*PSG.edf"))
-    hyp_files = list(root.rglob("*Hypnogram.edf"))
-    return len(psg_files) > 0 and len(hyp_files) > 0
+    if not root.exists():
+        return False
+    return len(_discover_record_pairs(root)) >= min_pairs
 
 
 def _extract_subject_id(record_name: str) -> str:
@@ -96,12 +97,24 @@ def _split_records_by_subject(
     subjects = list(rng.permutation(subjects))
 
     n_subjects = len(subjects)
-    n_train = max(1, int(0.7 * n_subjects))
-    n_val = max(1, int(0.15 * n_subjects)) if n_subjects >= 3 else 0
+    if n_subjects < 3:
+        train_subjects = set(subjects)
+        val_subjects = set()
+        test_subjects = set()
+    else:
+        n_val = max(1, int(0.15 * n_subjects))
+        n_test = max(1, int(0.15 * n_subjects))
+        n_train = max(1, n_subjects - n_val - n_test)
 
-    train_subjects = set(subjects[:n_train])
-    val_subjects = set(subjects[n_train:n_train + n_val])
-    test_subjects = set(subjects[n_train + n_val:])
+        # Ensure we always keep at least one subject for each split once there
+        # are enough subjects to do so.
+        if n_train + n_val + n_test > n_subjects:
+            overflow = (n_train + n_val + n_test) - n_subjects
+            n_train = max(1, n_train - overflow)
+
+        train_subjects = set(subjects[:n_train])
+        val_subjects = set(subjects[n_train:n_train + n_val])
+        test_subjects = set(subjects[n_train + n_val:n_train + n_val + n_test])
 
     if split == "train":
         selected = train_subjects
