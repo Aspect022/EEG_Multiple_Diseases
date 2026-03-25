@@ -41,6 +41,7 @@ EPOCH_DURATION = 30
 DEFAULT_CHANNELS = ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]
 TARGET_NUM_CHANNELS = 6
 MIN_RECOMMENDED_RECORD_PAIRS = 10
+STORAGE_DTYPE = np.float16
 
 
 def verify_sleep_edf_dataset(data_dir: str, min_pairs: int = MIN_RECOMMENDED_RECORD_PAIRS) -> bool:
@@ -229,7 +230,7 @@ class SleepEDFDataset(Dataset):
                 print(f"  [Sleep-EDF] Failed loading {record['record_name']}: {exc}")
 
         if epochs_data:
-            self.epochs_data = np.stack(epochs_data).astype(np.float32)
+            self.epochs_data = np.stack(epochs_data).astype(STORAGE_DTYPE)
             self.labels = np.asarray(labels, dtype=np.int64)
             print(
                 f"  [Sleep-EDF] {self.split}: loaded {len(self.labels)} epochs "
@@ -237,7 +238,7 @@ class SleepEDFDataset(Dataset):
             )
         else:
             samples = int(EPOCH_DURATION * self.target_sfreq)
-            self.epochs_data = np.empty((0, self.target_num_channels, samples), dtype=np.float32)
+            self.epochs_data = np.empty((0, self.target_num_channels, samples), dtype=STORAGE_DTYPE)
             self.labels = np.empty((0,), dtype=np.int64)
             print(f"  [Sleep-EDF] {self.split}: WARNING - no epochs loaded")
 
@@ -245,7 +246,7 @@ class SleepEDFDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
-        signal = np.nan_to_num(self.epochs_data[idx], nan=0.0)
+        signal = np.nan_to_num(self.epochs_data[idx].astype(np.float32, copy=False), nan=0.0)
         signal_tensor = torch.from_numpy(signal).float()
         label = int(self.labels[idx])
 
@@ -274,7 +275,7 @@ class SleepEDFMultiModalDataset(Dataset):
         return len(self.base_dataset)
 
     def __getitem__(self, idx: int):
-        signal = np.nan_to_num(self.base_dataset.epochs_data[idx], nan=0.0)
+        signal = np.nan_to_num(self.base_dataset.epochs_data[idx].astype(np.float32, copy=False), nan=0.0)
         raw_signal = torch.from_numpy(signal).float()
         scalogram = self.scalogram_transform(raw_signal.clone())
         label = int(self.base_dataset.labels[idx])

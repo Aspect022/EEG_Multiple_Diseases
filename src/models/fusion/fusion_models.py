@@ -14,11 +14,15 @@ References:
     - Dynamic routing networks (Sabour et al., 2017)
 """
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Optional, Dict
 from dataclasses import dataclass
+
+from ..quantum import create_hybrid_quantum_cnn
+from ..snn_1d.snn_classifier import SNN1D
 
 
 def _extract_branch_features(model: nn.Module, x: torch.Tensor) -> torch.Tensor:
@@ -735,10 +739,24 @@ class QuantumSNNFusionEarly(nn.Module):
         quantum_entanglement: str = 'full',
     ):
         super().__init__()
-        # Note: Quantum model would be loaded separately
-        # This is the fusion wrapper
         self.dim_1d = dim_1d
         self.dim_quantum = dim_quantum
+        self.model_1d = SNN1D(
+            in_channels=6,
+            num_classes=num_classes,
+            use_attention=True,
+            fusion_dim=dim_1d,
+        )
+        self.quantum_model = create_hybrid_quantum_cnn(
+            num_classes=num_classes,
+            entanglement_type=quantum_entanglement,
+            rotation_type=quantum_rotation,
+        )
+        self.quantum_proj = nn.Identity() if self.quantum_model.n_qubits == dim_quantum else nn.Sequential(
+            nn.Linear(self.quantum_model.n_qubits, dim_quantum),
+            nn.LayerNorm(dim_quantum),
+            nn.ELU(),
+        )
         
         self.fusion_classifier = nn.Sequential(
             nn.Linear(dim_1d + dim_quantum, fusion_dim),
@@ -747,6 +765,16 @@ class QuantumSNNFusionEarly(nn.Module):
             nn.Dropout(0.3),
             nn.Linear(fusion_dim, num_classes),
         )
+
+    def _extract_quantum_features(self, scalogram: torch.Tensor) -> torch.Tensor:
+        batch_size = scalogram.shape[0]
+        x = self.quantum_model.encoder(scalogram)
+        x = x.view(batch_size, -1)
+        x = self.quantum_model.pre_quantum(x)
+        x = torch.tanh(x) * np.pi
+        quantum_state = self.quantum_model.circuit(x)
+        quantum_features = self.quantum_model.measurement(quantum_state).float()
+        return self.quantum_proj(quantum_features)
     
     def forward(
         self,
@@ -764,11 +792,22 @@ class QuantumSNNFusionEarly(nn.Module):
             raw_signal: Raw 1D signal (ignored, for API compatibility)
             scalogram: 2D scalogram (ignored, for API compatibility)
         """
-        if features_1d is None or features_quantum is None:
-            raise ValueError("features_1d and features_quantum must be provided")
+        if features_1d is None:
+            if raw_signal is None:
+                raise ValueError("Either features_1d or raw_signal must be provided")
+            features_1d = self.model_1d.extract_features(raw_signal)
+
+        if features_quantum is None:
+            if scalogram is None:
+                raise ValueError("Either features_quantum or scalogram must be provided")
+            features_quantum = self._extract_quantum_features(scalogram)
         
         fused = torch.cat([features_1d, features_quantum], dim=1)
         return self.fusion_classifier(fused)
+
+    @property
+    def reg_loss(self) -> torch.Tensor:
+        return getattr(self.model_1d, "reg_loss", torch.tensor(0.0))
 
 
 class QuantumSNNFusionGated(nn.Module):
@@ -789,10 +828,28 @@ class QuantumSNNFusionGated(nn.Module):
         dim_quantum: int = 512,
         confidence_threshold: float = 0.7,
         gate_type: str = 'adaptive',
+        quantum_rotation: str = 'RXY',
+        quantum_entanglement: str = 'full',
     ):
         super().__init__()
         self.confidence_threshold = confidence_threshold
         self.gate_type = gate_type
+        self.model_1d = SNN1D(
+            in_channels=6,
+            num_classes=num_classes,
+            use_attention=True,
+            fusion_dim=dim_1d,
+        )
+        self.quantum_model = create_hybrid_quantum_cnn(
+            num_classes=num_classes,
+            entanglement_type=quantum_entanglement,
+            rotation_type=quantum_rotation,
+        )
+        self.quantum_proj = nn.Identity() if self.quantum_model.n_qubits == dim_quantum else nn.Sequential(
+            nn.Linear(self.quantum_model.n_qubits, dim_quantum),
+            nn.LayerNorm(dim_quantum),
+            nn.ELU(),
+        )
         
         # Confidence estimator
         self.confidence_net = nn.Sequential(
@@ -821,6 +878,16 @@ class QuantumSNNFusionGated(nn.Module):
             nn.Dropout(0.3),
             nn.Linear(64, num_classes),
         )
+
+    def _extract_quantum_features(self, scalogram: torch.Tensor) -> torch.Tensor:
+        batch_size = scalogram.shape[0]
+        x = self.quantum_model.encoder(scalogram)
+        x = x.view(batch_size, -1)
+        x = self.quantum_model.pre_quantum(x)
+        x = torch.tanh(x) * np.pi
+        quantum_state = self.quantum_model.circuit(x)
+        quantum_features = self.quantum_model.measurement(quantum_state).float()
+        return self.quantum_proj(quantum_features)
     
     def forward(
         self,
@@ -839,7 +906,12 @@ class QuantumSNNFusionGated(nn.Module):
             scalogram: 2D scalogram (ignored, for API compatibility)
         """
         if features_1d is None:
-            raise ValueError("features_1d must be provided")
+            if raw_signal is None:
+                raise ValueError("Either features_1d or raw_signal must be provided")
+            features_1d = self.model_1d.extract_features(raw_signal)
+
+        if features_quantum is None and scalogram is not None:
+            features_quantum = self._extract_quantum_features(scalogram)
         
         confidence = self.confidence_net(features_1d)
         logits_1d = self.classifier_1d(features_1d)
@@ -861,6 +933,10 @@ class QuantumSNNFusionGated(nn.Module):
             logits = logits_1d
 
         return logits, gate_info
+
+    @property
+    def reg_loss(self) -> torch.Tensor:
+        return getattr(self.model_1d, "reg_loss", torch.tensor(0.0))
 
 
 def create_quantum_snn_fusion_early(

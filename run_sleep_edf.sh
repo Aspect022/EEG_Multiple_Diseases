@@ -16,8 +16,8 @@
 #
 # Optional overrides:
 #   EPOCHS=30
-#   BATCH_SIZE=64
-#   NUM_WORKERS=8
+#   BATCH_SIZE=16
+#   NUM_WORKERS=2
 #   LR=0.001
 #   DATA_DIR=data/sleep-edf
 #   OUTPUT_DIR=outputs/sleep_edf_results
@@ -33,8 +33,8 @@
 set -euo pipefail
 
 EPOCHS="${EPOCHS:-30}"
-BATCH_SIZE="${BATCH_SIZE:-64}"
-NUM_WORKERS="${NUM_WORKERS:-8}"
+BATCH_SIZE="${BATCH_SIZE:-16}"
+NUM_WORKERS="${NUM_WORKERS:-2}"
 LR="${LR:-0.001}"
 DATA_DIR="${DATA_DIR:-data/sleep-edf}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/sleep_edf_results}"
