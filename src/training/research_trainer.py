@@ -108,7 +108,7 @@ class ResearchConfig:
     num_classes: int = 2
 
     # --- W&B ---
-    wandb_project: str = 'eeg-sleep-staging'
+    wandb_project: str = 'eeg-sleep-apnea'
     wandb_tags: List[str] = field(default_factory=list)
     wandb_config_extra: Dict[str, Any] = field(default_factory=dict)
 
