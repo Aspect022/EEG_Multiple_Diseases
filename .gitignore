@@ -11,6 +11,7 @@ __pycache__/
 dist/
 build/
 *.so
+pytest-cache-files-*/
 
 # --- Virtual Environment ---
 venv/
@@ -31,6 +32,7 @@ outputs/results/*/fold_*/checkpoint_*.pt
 # --- Monitoring local files ---
 wandb/
 runs/
+session.qwen/
 
 # --- OS & IDE ---
 .DS_Store
@@ -41,13 +43,18 @@ Thumbs.db
 .vscode/
 
 # --- Logs ---
+logs/
+*.log
 pipeline.log
 pipeline.pid
 nohup.out
 
 # --- Temp files ---
-fix_metrics.py
 *.tmp
+
+# --- Results ---
+results/ALLResults.csv
+results/wandb_export_*.csv
 
 # ==============================================
 # KEPT IN GIT (syncs from server → local):
