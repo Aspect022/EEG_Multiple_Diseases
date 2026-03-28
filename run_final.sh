@@ -20,7 +20,7 @@
 #   tail -f logs/sleep_edf_run.log
 # =============================================================================
 
-set -euo pipefail
+set -uo pipefail
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
