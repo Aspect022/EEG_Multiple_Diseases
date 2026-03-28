@@ -1,11 +1,8 @@
 """
 Advanced EEG Classification Framework.
 
-A comprehensive framework for EEG classification using state-of-the-art
-neural network architectures including:
-- Spiking Neural Networks (SNN) with LIF and QIF neurons
-- Hybrid Quantum-Classical CNNs with configurable entanglement/rotations
-- Swin Transformers
+Sub-packages are imported lazily to avoid hard dependency crashes
+(e.g. MNE, PennyLane) when only a subset of the framework is used.
 
 Modules:
 - data: Dataset loaders and transforms (BOAS, Sleep-EDF, CWT)
@@ -15,11 +12,10 @@ Modules:
 - utils: Benchmarking and utility functions
 """
 
-from . import data
-from . import models
-from . import training
-from . import utils
-from . import evaluation
-
 __version__ = '0.3.0'
 __author__ = 'EEG Classification Team'
+
+# Submodules are NOT imported here — import them explicitly as needed:
+#   from src.training.research_trainer import FoldTrainer, ResearchConfig
+#   from src.data.sleep_edf_dataset import create_sleep_edf_dataloaders
+#   from src.models.fusion.conditional_routing_fusion import create_conditional_routing
