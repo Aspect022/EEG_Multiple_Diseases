@@ -26,6 +26,7 @@ from .fusion_models import (
 from .fusion_a import FusionA, create_fusion_a
 from .fusion_b import FusionB, create_fusion_b
 from .fusion_c import FusionC, create_fusion_c
+from .conditional_routing_fusion import ConditionalRoutingFusion, create_conditional_routing
 
 __all__ = [
     'EarlyFusionNetwork',
@@ -48,4 +49,5 @@ __all__ = [
     'FusionA', 'create_fusion_a',
     'FusionB', 'create_fusion_b',
     'FusionC', 'create_fusion_c',
+    'ConditionalRoutingFusion', 'create_conditional_routing',
 ]

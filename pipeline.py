@@ -216,6 +216,16 @@ EXPERIMENT_DEFS['fusion_c'] = {
     'name': 'Fusion-MultiModal (SNN-1D + Swin)', 'data_mode': 'both',
 }
 
+# Conditional Routing Fusion: SNN fast path + Quantum slow path
+EXPERIMENT_DEFS['conditional_routing'] = {
+    'type': 'conditional_routing',
+    'name': 'Conditional-SNN-Quantum-Routing',
+    'data_mode': '1d',
+    'gate_type': 'adaptive',
+    'quantum_rotation': 'RYZ',
+    'quantum_entanglement': 'ring',
+}
+
 
 # =========================================================================
 # Dataset Download & Verification
@@ -481,6 +491,15 @@ def create_model(exp_config: Dict, num_classes: int = 5) -> torch.nn.Module:
             gate_type=exp_config.get('gate_type', 'adaptive'),
             quantum_rotation=exp_config.get('quantum_rotation', 'RXY'),
             quantum_entanglement=exp_config.get('quantum_entanglement', 'full'),
+        )
+
+    elif exp_type == 'conditional_routing':
+        from src.models.fusion.conditional_routing_fusion import create_conditional_routing
+        return create_conditional_routing(
+            num_classes=num_classes,
+            gate_type=exp_config.get('gate_type', 'adaptive'),
+            quantum_rotation=exp_config.get('quantum_rotation', 'RYZ'),
+            quantum_entanglement=exp_config.get('quantum_entanglement', 'ring'),
         )
 
     else:
