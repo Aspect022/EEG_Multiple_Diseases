@@ -1,10 +1,30 @@
 #!/usr/bin/env python3
 """
-Dedicated Sleep-EDF experiment pipeline.
+Dedicated Sleep-EDF experiment pipeline — FINAL configuration.
 
-This runner mirrors the BOAS pipeline, but targets PhysioNet Sleep-EDF
-Expanded so the existing model zoo can be benchmarked on a second EEG
-dataset without touching the BOAS-specific path.
+Runs 13 finalized models on PhysioNet Sleep-EDF Expanded dataset.
+All runs use fold-0 with configurable epochs, batch size, and learning rate.
+Results logged to W&B project "eeg-sleep-apnea" with full metadata.
+
+Phase 1 (Priority 0 — 1D signal models):
+    snn_1d_attn, snn_1d_lif, quantum_1d_ring_RYZ,
+    quantum_1d_full_RXY, tcanet, conditional_routing
+
+Phase 2 (Priority 1 — 2D baselines & fusion):
+    swin, convnext, efficientnet, vit, deit, fusion_a, snn_fusion_early
+
+Usage:
+    # Run all 13 models (fold-0):
+    python sleep_edf_pipeline.py --epochs 30
+
+    # Run a specific phase:
+    python sleep_edf_pipeline.py --models phase1
+
+    # Run specific models:
+    python sleep_edf_pipeline.py --models snn_1d_attn,conditional_routing
+
+    # Validate models without training:
+    python sleep_edf_pipeline.py --validate-only
 """
 
 import argparse
@@ -29,48 +49,51 @@ from src.training.multimodal_trainer import MultiModalFoldTrainer
 from src.training.research_trainer import FoldTrainer, ResearchConfig
 
 
-STABLE_MODELS = [
-    "tcanet",
-    "snn_1d_lif",
-    "snn_1d_attn",
-    "quantum_1d_ring_RYZ",
-    "quantum_1d_full_RXY",
-    "snn_lif_resnet",
-    "snn_lif_vit",
-    "swin",
-    "vit",
-    "deit",
-    "efficientnet",
-    "convnext",
-    "quantum_ring_RXY",
-    "quantum_full_RXY",
-    "fusion_a",
-    "fusion_b",
+# ─────────────────── Final Model Lists ───────────────────
+
+PHASE1_MODELS = [
+    "snn_1d_attn",           # Best 1D model (94.74%)
+    "snn_1d_lif",            # SNN baseline (ablation)
+    "quantum_1d_ring_RYZ",   # Best quantum variant (94.56%)
+    "quantum_1d_full_RXY",   # Entanglement comparison
+    "tcanet",                # Established 1D baseline
+    "conditional_routing",   # Novel: SNN→Quantum conditional routing
 ]
 
-RISKY_MODELS = [
-    "snn_qif_resnet",
-    "snn_qif_vit",
-    "spiking_vit_1d",
-    "snn_fusion_early",
-    "snn_fusion_late",
-    "snn_fusion_gated",
-    "quantum_snn_fusion_early",
-    "quantum_snn_fusion_gated",
-    "fusion_c",
+PHASE2_MODELS = [
+    "swin",                  # 2D transformer baseline
+    "convnext",              # 2D CNN baseline
+    "efficientnet",          # Lightweight 2D
+    "vit",                   # ViT baseline
+    "deit",                  # DeiT baseline
+    "fusion_a",              # Multi-backbone fusion (Swin+ConvNeXt)
+    "snn_fusion_early",      # Multi-modal SNN (1D+2D)
 ]
+
+ALL_MODELS = PHASE1_MODELS + PHASE2_MODELS
+
+# W&B configuration
+WANDB_PROJECT = "eeg-sleep-apnea"
+DATASET_NAME = "physionet-sleep-edf-expanded"
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Sleep-EDF benchmarking pipeline")
+    parser = argparse.ArgumentParser(
+        description="Sleep-EDF benchmarking pipeline (Final 13 models)",
+    )
     parser.add_argument("--data-dir", type=str, default="data/sleep-edf")
     parser.add_argument("--output-dir", type=str, default="outputs/sleep_edf_results")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--models", type=str, default="stable",
-                        help='Preset: stable|risky|all or comma-separated model keys')
+    parser.add_argument(
+        "--models", type=str, default="all",
+        help=(
+            "Model selector: 'all' | 'phase1' | 'phase2' | "
+            "comma-separated model keys (e.g. snn_1d_attn,tcanet)"
+        ),
+    )
     parser.add_argument("--max-records", type=int, default=None)
     parser.add_argument("--validate-models", action="store_true")
     parser.add_argument("--validate-only", action="store_true")
@@ -79,22 +102,30 @@ def parse_args():
 
 
 def resolve_models(selector: str) -> Dict[str, Dict[str, Any]]:
-    if selector == "stable":
-        keys = STABLE_MODELS
-    elif selector == "risky":
-        keys = RISKY_MODELS
-    elif selector == "all":
-        keys = [k for k in EXPERIMENT_DEFS if k not in {"snn_qif_resnet"}] + ["snn_qif_resnet"]
+    """Resolve model selector to experiment definitions."""
+    if selector == "all":
+        keys = ALL_MODELS
+    elif selector == "phase1":
+        keys = PHASE1_MODELS
+    elif selector == "phase2":
+        keys = PHASE2_MODELS
     else:
         keys = [k.strip() for k in selector.split(",") if k.strip()]
 
-    experiments = {k: dict(EXPERIMENT_DEFS[k]) for k in keys if k in EXPERIMENT_DEFS}
+    experiments = {}
+    for k in keys:
+        if k in EXPERIMENT_DEFS:
+            experiments[k] = dict(EXPERIMENT_DEFS[k])
+        else:
+            print(f"  [WARN] Model '{k}' not found in EXPERIMENT_DEFS, skipping.")
+
     if not experiments:
         raise ValueError(f"No valid models resolved from '{selector}'")
     return experiments
 
 
 def maybe_disable_pretrained(experiments: Dict[str, Dict[str, Any]]) -> None:
+    """Disable pretrained weights for 2D models (for fair comparison)."""
     for exp in experiments.values():
         if exp["type"] in {
             "swin", "vit", "deit", "efficientnet", "convnext",
@@ -110,6 +141,7 @@ def build_sleep_edf_loaders(
     num_workers: int,
     max_records: int | None,
 ):
+    """Build data loaders for the specified data mode (1d/2d/both)."""
     if data_mode == "1d":
         return create_sleep_edf_dataloaders(
             data_dir=data_dir,
@@ -139,6 +171,7 @@ def build_sleep_edf_loaders(
 
 
 def compute_class_weights(dataset) -> torch.Tensor | None:
+    """Compute inverse-frequency class weights for imbalanced datasets."""
     labels = getattr(dataset, "labels", None)
     if labels is None or len(labels) == 0:
         return None
@@ -154,6 +187,7 @@ def compute_class_weights(dataset) -> torch.Tensor | None:
 
 
 def validate_model_forward(exp_key: str, exp_config: Dict[str, Any]) -> Tuple[str, str]:
+    """Smoke-test a model's forward pass with dummy data."""
     try:
         model = create_model(exp_config, num_classes=5)
         model.eval()
@@ -186,6 +220,7 @@ def validate_model_forward(exp_key: str, exp_config: Dict[str, Any]) -> Tuple[st
 
 
 def validate_models(experiments: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
+    """Validate all model forward passes."""
     print("\n[Validation] Checking model forward passes...")
     results: Dict[str, str] = {}
     for key, config in experiments.items():
@@ -193,6 +228,15 @@ def validate_models(experiments: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
         results[key] = f"{status}: {message}"
         print(f"  - {key:<28} {status}  {message}")
     return results
+
+
+def determine_phase(exp_key: str) -> str:
+    """Tag which phase a model belongs to (for W&B grouping)."""
+    if exp_key in PHASE1_MODELS:
+        return "phase1-1d"
+    elif exp_key in PHASE2_MODELS:
+        return "phase2-2d-fusion"
+    return "custom"
 
 
 def run_sleep_edf_experiment(
@@ -206,6 +250,7 @@ def run_sleep_edf_experiment(
     max_records: int | None,
     num_workers: int,
 ) -> Dict[str, Any]:
+    """Train a single model on Sleep-EDF and return results."""
     exp_name = exp_config["name"]
     exp_output = Path(output_dir) / exp_key
     exp_output.mkdir(parents=True, exist_ok=True)
@@ -213,6 +258,7 @@ def run_sleep_edf_experiment(
 
     print(f"\n{'='*70}")
     print(f"  Sleep-EDF Experiment: {exp_name}")
+    print(f"  Model Key: {exp_key}")
     print(f"  Output: {exp_output}")
     print(f"{'='*70}")
 
@@ -247,6 +293,35 @@ def run_sleep_edf_experiment(
         model = create_model(exp_config, num_classes=5)
         class_weights = compute_class_weights(train_loader.dataset)
 
+        # Build W&B metadata
+        wandb_extra = {
+            "dataset_name": DATASET_NAME,
+            "dataset_dir": data_dir,
+            "model_key": exp_key,
+            "model_name": exp_name,
+            "model_type": exp_config.get("type", "unknown"),
+            "data_mode": data_mode,
+            "phase": determine_phase(exp_key),
+            "train_samples": train_size,
+            "val_samples": val_size,
+            "test_samples": test_size,
+            "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",
+            "num_params": sum(p.numel() for p in model.parameters() if p.requires_grad),
+        }
+        # Add model-specific config (e.g., gate_type, rotation, entanglement)
+        for key_extra in ["gate_type", "quantum_rotation", "quantum_entanglement",
+                          "attention", "neuron_type", "backbone", "entanglement",
+                          "rotation", "confidence_threshold"]:
+            if key_extra in exp_config:
+                wandb_extra[key_extra] = exp_config[key_extra]
+
+        wandb_tags = [
+            DATASET_NAME,
+            data_mode,
+            determine_phase(exp_key),
+            exp_config.get("type", "unknown"),
+        ]
+
         config = ResearchConfig(
             experiment_name=exp_key,
             output_dir=output_dir,
@@ -262,6 +337,9 @@ def run_sleep_edf_experiment(
             seed=42,
             warmup_epochs=3,
             max_grad_norm=1.0,
+            wandb_project=WANDB_PROJECT,
+            wandb_tags=wandb_tags,
+            wandb_config_extra=wandb_extra,
         )
 
         if data_mode == "both":
@@ -309,6 +387,8 @@ def run_sleep_edf_experiment(
         with open(exp_output / "error.json", "w") as f:
             json.dump(result, f, indent=2)
         print(f"  [FAILED] {exp_name}: {exc}")
+        import traceback
+        traceback.print_exc()
         return result
 
 
@@ -326,16 +406,18 @@ def main():
         maybe_disable_pretrained(experiments)
 
     print("=" * 70)
-    print("  SLEEP-EDF EEG BENCHMARK PIPELINE")
+    print("  SLEEP-EDF EEG BENCHMARK PIPELINE (FINAL)")
     print("=" * 70)
+    print(f"  Dataset:      {DATASET_NAME}")
+    print(f"  W&B Project:  {WANDB_PROJECT}")
     print(f"  Data Dir:     {args.data_dir}")
     print(f"  Output Dir:   {args.output_dir}")
-    print(f"  Models:       {', '.join(experiments.keys())}")
+    print(f"  Models ({len(experiments)}):  {', '.join(experiments.keys())}")
     print(f"  Batch Size:   {args.batch_size}")
     print(f"  Num Workers:  {args.num_workers}")
     print(f"  Epochs:       {args.epochs}")
     print(f"  Max Records:  {args.max_records or 'all'}")
-    print(f"  Device:       {'CUDA' if torch.cuda.is_available() else 'CPU'}")
+    print(f"  Device:       {'CUDA (' + torch.cuda.get_device_name(0) + ')' if torch.cuda.is_available() else 'CPU'}")
     print("=" * 70)
 
     validation_results = {}
@@ -351,7 +433,13 @@ def main():
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     all_results: List[Dict[str, Any]] = []
-    for exp_key, exp_config in experiments.items():
+    total = len(experiments)
+
+    for idx, (exp_key, exp_config) in enumerate(experiments.items(), 1):
+        print(f"\n{'#'*70}")
+        print(f"  [{idx}/{total}] Starting: {exp_key}")
+        print(f"{'#'*70}")
+
         result = run_sleep_edf_experiment(
             exp_key=exp_key,
             exp_config=exp_config,
@@ -368,7 +456,23 @@ def main():
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+        # Print progress summary
+        completed = len([r for r in all_results if "error" not in r])
+        failed = len([r for r in all_results if "error" in r])
+        print(f"\n  Progress: {idx}/{total} done | {completed} ✓ | {failed} ✗")
+
     generate_summary(all_results, args.output_dir)
+
+    # Final summary
+    print(f"\n{'='*70}")
+    print("  ALL EXPERIMENTS COMPLETE")
+    print(f"{'='*70}")
+    for r in all_results:
+        status = "✓" if "error" not in r else "✗"
+        duration = r.get("duration_seconds", 0)
+        hours = duration / 3600
+        print(f"  {status} {r['experiment']:<30} {hours:.1f}h")
+    print(f"{'='*70}")
 
 
 if __name__ == "__main__":

@@ -258,12 +258,51 @@ class FoldTrainer:
             self.device = torch.device(config.device)
 
         self.model = model.to(self.device)
-
         # Loss
         weight = class_weights.to(self.device) if class_weights is not None else None
         self.criterion = nn.CrossEntropyLoss(
             weight=weight,
             label_smoothing=config.label_smoothing,
+        )
+
+        # Optimizer & Scheduler
+        self.optimizer = self._build_optimizer()
+        self.scheduler = self._build_scheduler()
+
+        # Mixed precision
+        self.scaler = GradScaler('cuda') if (config.mixed_precision and self.device.type == 'cuda') else None
+
+        # W&B — graceful init (no crash if offline)
+        self._wandb_active = False
+        if HAS_WANDB:
+            try:
+                wandb_config = asdict(config)
+                wandb_config.update(config.wandb_config_extra)
+                wandb.init(
+                    project=config.wandb_project,
+                    name=f'{config.experiment_name}_fold{fold}',
+                    config=wandb_config,
+                    tags=config.wandb_tags or None,
+                    reinit=True,
+                )
+                self._wandb_active = True
+                print(f'  [W&B] Logging to: {wandb.run.url}')
+            except Exception as e:
+                print(f'  [W&B] Init failed (offline?): {e}')
+
+        # TensorBoard — graceful init
+        self._tb_writer = None
+        if HAS_TENSORBOARD:
+            try:
+                tb_dir = Path(config.output_dir) / config.experiment_name / f'runs/fold_{fold}'
+                self._tb_writer = SummaryWriter(str(tb_dir))
+                print(f'  [TB] Logging to: {tb_dir}')
+            except Exception as e:
+                print(f'  [TB] Init failed: {e}')
+
+        # History
+        self.history: Dict[str, List[float]] = {
+            'epoch': [],
             'train_loss': [], 'train_acc': [],
             'val_loss': [], 'val_acc': [],
             'val_f1': [], 'val_auc': [],
