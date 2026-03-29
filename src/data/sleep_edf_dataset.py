@@ -179,68 +179,124 @@ class SleepEDFDataset(Dataset):
         self.labels: np.ndarray
         self._load_records()
 
-    def _load_records(self) -> None:
-        epochs_data: List[np.ndarray] = []
-        labels: List[int] = []
-        loaded_records = 0
+    def _cache_path(self) -> Path:
+        """Deterministic cache filename based on split + settings."""
+        max_tag = f"_max{self.max_records}" if self.max_records is not None else ""
+        tag = f"{self.split}_sfreq{int(self.target_sfreq)}_ch{self.target_num_channels}_seed{self.seed}{max_tag}"
+        cache_dir = self.data_dir / ".cache"
+        cache_dir.mkdir(exist_ok=True)
+        return cache_dir / f"sleep_edf_{tag}.npz"
 
-        for record in self.records:
+    def _load_records(self) -> None:
+        cache_path = self._cache_path()
+        data_file = cache_path.with_name(f"{cache_path.stem}_data.npy")
+        label_file = cache_path.with_name(f"{cache_path.stem}_labels.npy")
+
+        samples_per_epoch = int(EPOCH_DURATION * self.target_sfreq)
+
+        # ── Fast path: load from memmap ──────────────────────────────────
+        if data_file.exists() and label_file.exists():
+            print(f"  [Sleep-EDF] {self.split}: loading from memmap cache {data_file.name} ...", flush=True)
+            self.labels = np.load(label_file, allow_pickle=False)
+            shape = (len(self.labels), self.target_num_channels, samples_per_epoch)
+            self.epochs_data = np.memmap(data_file, dtype=STORAGE_DTYPE, mode='r', shape=shape)
+            print(
+                f"  [Sleep-EDF] {self.split}: {len(self.labels)} epochs "
+                f"({self.get_class_distribution()})", flush=True,
+            )
+            return
+
+        # ── Slow path: read EDF files and stream to memmap ─────────────
+        print(f"  [Sleep-EDF] {self.split}: building cache from {len(self.records)} records ...", flush=True)
+        
+        # Pass 1: Count total epochs to pre-allocate memmap (takes seconds)
+        total_epochs = 0
+        valid_events = []
+        for i, record in enumerate(self.records):
+            try:
+                ann = mne.read_annotations(record["hypnogram"])
+                record_events = []
+                for a in ann:
+                    desc = str(a["description"]).strip()
+                    lbl = SLEEP_STAGES.get(desc, -1)
+                    if lbl >= 0:
+                        full_eps = int(float(a["duration"]) // EPOCH_DURATION)
+                        for e_idx in range(full_eps):
+                            onset = float(a["onset"]) + e_idx * EPOCH_DURATION
+                            record_events.append((onset, lbl))
+                total_epochs += len(record_events)
+                valid_events.append(record_events)
+            except Exception:
+                valid_events.append([])
+
+        if total_epochs == 0:
+            self.epochs_data = np.empty((0, self.target_num_channels, samples_per_epoch), dtype=STORAGE_DTYPE)
+            self.labels = np.empty((0,), dtype=np.int64)
+            print(f"  [Sleep-EDF] {self.split}: WARNING - no epochs loaded", flush=True)
+            return
+
+        shape = (total_epochs, self.target_num_channels, samples_per_epoch)
+        print(f"  [Sleep-EDF] {self.split}: allocating {shape} memmap on disk (zero RAM overhead)...", flush=True)
+        
+        # Allocate Memmap
+        self.epochs_data = np.memmap(data_file, dtype=STORAGE_DTYPE, mode='w+', shape=shape)
+        self.labels = np.zeros(total_epochs, dtype=np.int64)
+        
+        # Pass 2: Extract data and stream directly to disk
+        idx = 0
+        loaded_records = 0
+        
+        for i, record in enumerate(self.records):
+            events = valid_events[i]
+            if not events: continue
+            
             try:
                 raw = mne.io.read_raw_edf(record["psg"], preload=True, verbose=False)
-                available_channels = [ch for ch in self.channels if ch in raw.ch_names]
-                if not available_channels:
-                    continue
-
-                raw.pick_channels(available_channels)
+                available = [ch for ch in self.channels if ch in raw.ch_names]
+                if not available: continue
+                
+                raw.pick_channels(available)
                 if raw.info["sfreq"] != self.target_sfreq:
                     raw.resample(self.target_sfreq)
-
+                    
                 sfreq = raw.info["sfreq"]
-                samples_per_epoch = int(EPOCH_DURATION * sfreq)
                 signal = raw.get_data().astype(np.float32)
-
-                annotations = mne.read_annotations(record["hypnogram"])
-                for ann in annotations:
-                    description = str(ann["description"]).strip()
-                    label = SLEEP_STAGES.get(description, -1)
-                    if label < 0:
-                        continue
-
-                    onset = float(ann["onset"])
-                    duration = float(ann["duration"])
-                    full_epochs = int(duration // EPOCH_DURATION)
-
-                    for epoch_idx in range(full_epochs):
-                        start_time = onset + epoch_idx * EPOCH_DURATION
-                        start_sample = int(start_time * sfreq)
-                        end_sample = start_sample + samples_per_epoch
-                        if end_sample > signal.shape[1]:
-                            continue
-
-                        epoch = signal[:, start_sample:end_sample]
-                        if epoch.shape[1] != samples_per_epoch:
-                            continue
-
-                        epoch = _pad_or_trim_channels(epoch, self.target_num_channels)
-                        epochs_data.append(epoch)
-                        labels.append(label)
-
+                
+                for (onset, label) in events:
+                    start_sample = int(onset * sfreq)
+                    end_sample = start_sample + samples_per_epoch
+                    if end_sample > signal.shape[1]: continue
+                        
+                    epoch = signal[:, start_sample:end_sample]
+                    if epoch.shape[1] != samples_per_epoch: continue
+                        
+                    epoch = _pad_or_trim_channels(epoch, self.target_num_channels)
+                    
+                    self.epochs_data[idx] = epoch.astype(STORAGE_DTYPE)
+                    self.labels[idx] = label
+                    idx += 1
+                
+                self.epochs_data.flush()  # Flush directly to disk to keep RAM empty
                 loaded_records += 1
+                
+                if (i + 1) % 10 == 0 or (i + 1) == len(self.records):
+                    print(f"  [Sleep-EDF] {self.split}: {i+1}/{len(self.records)} records extracted ({idx} epochs streamed to disk)", flush=True)
+                    
             except Exception as exc:
-                print(f"  [Sleep-EDF] Failed loading {record['record_name']}: {exc}")
+                print(f"  [Sleep-EDF] Failed loading {record['record_name']}: {exc}", flush=True)
 
-        if epochs_data:
-            self.epochs_data = np.stack(epochs_data).astype(STORAGE_DTYPE)
-            self.labels = np.asarray(labels, dtype=np.int64)
-            print(
-                f"  [Sleep-EDF] {self.split}: loaded {len(self.labels)} epochs "
-                f"from {loaded_records} records ({self.get_class_distribution()})"
-            )
-        else:
-            samples = int(EPOCH_DURATION * self.target_sfreq)
-            self.epochs_data = np.empty((0, self.target_num_channels, samples), dtype=STORAGE_DTYPE)
-            self.labels = np.empty((0,), dtype=np.int64)
-            print(f"  [Sleep-EDF] {self.split}: WARNING - no epochs loaded")
+        self.epochs_data.flush()
+        
+        # Save exact labels array (in case some were dropped due to out-of-bounds)
+        np.save(label_file, self.labels[:idx])
+        
+        # Reload memmap in read-only mode to the EXACT size of extracted epochs
+        del self.epochs_data
+        shape = (idx, self.target_num_channels, samples_per_epoch)
+        self.epochs_data = np.memmap(data_file, dtype=STORAGE_DTYPE, mode='r', shape=shape)
+        self.labels = self.labels[:idx]
+        
+        print(f"  [Sleep-EDF] {self.split}: {len(self.labels)} epochs from {loaded_records} records — cached to {data_file.name}", flush=True)
 
     def __len__(self) -> int:
         return len(self.labels)
