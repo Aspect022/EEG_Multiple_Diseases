@@ -783,6 +783,12 @@ class TCANetClean(nn.Module):
         # (batch, time_reduced, filters) → (batch, time_reduced, filters)
         x = self.attention(x)
         
+        # Step 5.5: Ensure temporal dimension matches expected size
+        if x.shape[1] != self.time_reduced:
+            x = x.permute(0, 2, 1)
+            x = F.adaptive_avg_pool1d(x, self.time_reduced)
+            x = x.permute(0, 2, 1)
+
         # Step 6: Flatten
         # (batch, time_reduced, filters) → (batch, time_reduced * filters)
         features = x.reshape(batch_size, -1)

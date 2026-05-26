@@ -289,7 +289,7 @@ class GatedFusionNetwork(nn.Module):
         # Confidence estimator (from 1D features)
         self.confidence_net = nn.Sequential(
             nn.Linear(dim_1d, 64),
-            nn.BatchNorm1d(64),
+            nn.LayerNorm(64),  # Changed from BatchNorm1d for small-batch stability
             nn.ReLU(inplace=True),
             nn.Dropout(0.2),
             nn.Linear(64, 1),
@@ -308,7 +308,7 @@ class GatedFusionNetwork(nn.Module):
         # 1D-only classifier
         self.classifier_1d = nn.Sequential(
             nn.Linear(dim_1d, 64),
-            nn.BatchNorm1d(64),
+            nn.LayerNorm(64),  # Changed from BatchNorm1d for small-batch stability
             nn.ReLU(inplace=True),
             nn.Dropout(0.3),
             nn.Linear(64, num_classes),
@@ -322,9 +322,11 @@ class GatedFusionNetwork(nn.Module):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm1d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, (nn.BatchNorm1d, nn.LayerNorm)):
+                if m.weight is not None:
+                    nn.init.constant_(m.weight, 1)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
     
     def estimate_confidence(self, features_1d: torch.Tensor) -> torch.Tensor:
         """
@@ -383,10 +385,13 @@ class GatedFusionNetwork(nn.Module):
         }
         
         if self.gate_type == 'hard':
-            # Hard gating: binary decision
-            use_2d = (confidence < self.confidence_threshold).float()  # (B, 1)
+            # Hard gating: binary decision (use sigmoid surrogate during training for gradients)
+            if self.training:
+                use_2d = torch.sigmoid((self.confidence_threshold - confidence) * 10)
+            else:
+                use_2d = (confidence < self.confidence_threshold).float()  # (B, 1)
             
-            if features_2d is not None and use_2d.sum() > 0:
+            if features_2d is not None:
                 # Use 2D for low-confidence samples
                 logits_2d = self.fusion_net(
                     torch.cat([features_1d, features_2d], dim=1)

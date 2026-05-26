@@ -237,12 +237,15 @@ class SpikingResNet(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, (nn.BatchNorm2d, nn.InstanceNorm2d, nn.BatchNorm1d, nn.InstanceNorm1d)):
+                if m.weight is not None:
+                    nn.init.constant_(m.weight, 1)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
-                nn.init.constant_(m.bias, 0)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def _reset_states(self):
         """Reset all spiking neurons."""
@@ -305,30 +308,33 @@ class SpikingResNet(nn.Module):
         
         spike_record = []
         for t in range(self.num_timesteps):
-            # Generate Poisson spikes from probability
-            # This creates temporal variation essential for SNN computation
-            spike_mask = torch.rand_like(x_spike_prob) < x_spike_prob
-            x_t = x_spike_prob * spike_mask.float()
+            # Generate Poisson spikes from probability during training, or use expectation during eval
+            if self.training:
+                spike_mask = torch.rand_like(x_spike_prob) < x_spike_prob
+                x_t = x_spike_prob * spike_mask.float()
+            else:
+                x_t = x_spike_prob
             
             feat = self.forward_timestep(x_t)
             spk = self.fc(torch.flatten(self.avgpool(feat), 1))
             spike_record.append(spk)
             
-            # Record spike rate for this timestep
-            self.spike_stats['rates'].append(spk.mean().item())
+            # Record spike rate for this timestep (detached tensor to avoid CUDA sync)
+            self.spike_stats['rates'].append(spk.mean().detach())
         
-        # Compute layer-wise spike statistics (sample from layer1)
-        with torch.no_grad():
-            # Get a sample activation from layer1 for monitoring
-            sample_out = self.lif1(self.bn1(self.conv1(x)))
-            self.spike_stats['layer_stats']['conv1_rate'] = sample_out.mean().item()
+        # Guard layer-wise spike statistics to avoid redundant pass during training/validation
+        if not self.training:
+            with torch.no_grad():
+                # Get a sample activation from layer1 for monitoring
+                sample_out = self.lif1(self.bn1(self.conv1(x)))
+                self.spike_stats['layer_stats']['conv1_rate'] = sample_out.mean().detach()
         
         # Sum spike counts across timesteps (rate coding readout)
         # Changed from mean() to sum() for proper spike count readout
         output = torch.stack(spike_record, dim=0).sum(dim=0)
         
-        # Store average firing rate for the entire forward pass
-        self.spike_stats['avg_rate'] = sum(self.spike_stats['rates']) / len(self.spike_stats['rates'])
+        # Store average firing rate for the entire forward pass (detached tensor)
+        self.spike_stats['avg_rate'] = torch.stack(self.spike_stats['rates']).mean()
         
         return output
 

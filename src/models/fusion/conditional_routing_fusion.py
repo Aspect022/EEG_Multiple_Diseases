@@ -172,37 +172,48 @@ class ConditionalRoutingFusion(nn.Module):
         logits_snn = self.classifier_snn(snn_features)        # (batch, num_classes)
 
         # ── 4. Slow Path: Quantum features (always computed during training) ──
-        quantum_features = self._extract_quantum_features(x)  # (batch, n_qubits)
-        quantum_expanded = self.quantum_expansion(quantum_features)  # (batch, 128)
+        if self.training or self.gate_type != 'hard':
+            quantum_features = self._extract_quantum_features(x)  # (batch, n_qubits)
+            quantum_expanded = self.quantum_expansion(quantum_features)  # (batch, 128)
+            fused_features = torch.cat([snn_features, quantum_expanded], dim=1)  # (batch, 256)
+            logits_fused = self.classifier_fusion(fused_features)  # (batch, num_classes)
 
-        # ── 5. Fused predictions ──
-        fused_features = torch.cat([snn_features, quantum_expanded], dim=1)  # (batch, 256)
-        logits_fused = self.classifier_fusion(fused_features)  # (batch, num_classes)
+            # ── 5. Gated output ──
+            if self.gate_type == 'adaptive':
+                weight = confidence ** 2
+                logits = weight * logits_snn + (1 - weight) * logits_fused
+            elif self.gate_type == 'soft':
+                logits = confidence * logits_snn + (1 - confidence) * logits_fused
+            elif self.gate_type == 'hard':
+                use_fusion = (confidence < self.confidence_threshold).float()
+                logits = (1 - use_fusion) * logits_snn + use_fusion * logits_fused
+            else:
+                raise ValueError(f"Unknown gate_type: {self.gate_type}")
 
-        # ── 6. Gated output ──
-        if self.gate_type == 'adaptive':
-            # Squared confidence emphasizes high-confidence fast path
-            weight = confidence ** 2
-            logits = weight * logits_snn + (1 - weight) * logits_fused
-
-        elif self.gate_type == 'soft':
-            # Linear blend
-            logits = confidence * logits_snn + (1 - confidence) * logits_fused
-
-        elif self.gate_type == 'hard':
-            # Binary: SNN-only if confident, fusion if uncertain
-            use_fusion = (confidence < self.confidence_threshold).float()
-            logits = (1 - use_fusion) * logits_snn + use_fusion * logits_fused
-
+            # Store gate info (detached tensors to avoid CUDA sync)
+            self._gate_info = {
+                'confidence_mean': confidence.mean().detach(),
+                'confidence_std': confidence.std().detach(),
+                'quantum_usage': (confidence < self.confidence_threshold).float().mean().detach(),
+            }
         else:
-            raise ValueError(f"Unknown gate_type: {self.gate_type}")
+            # Inference in hard-gate mode: dynamically execute slow path only for uncertain samples
+            uncertain_mask = (confidence < self.confidence_threshold).squeeze(-1)  # (batch,)
+            logits = logits_snn.clone()
+            if uncertain_mask.any():
+                x_uncertain = x[uncertain_mask]
+                quantum_features_unc = self._extract_quantum_features(x_uncertain)
+                quantum_expanded_unc = self.quantum_expansion(quantum_features_unc)
+                fused_features_unc = torch.cat([snn_features[uncertain_mask], quantum_expanded_unc], dim=1)
+                logits_fused_unc = self.classifier_fusion(fused_features_unc)
+                logits[uncertain_mask] = logits_fused_unc
 
-        # Store gate info for monitoring
-        self._gate_info = {
-            'confidence_mean': confidence.mean().item(),
-            'confidence_std': confidence.std().item(),
-            'quantum_usage': (confidence < self.confidence_threshold).float().mean().item(),
-        }
+            # Store gate info (detached tensors to avoid CUDA sync)
+            self._gate_info = {
+                'confidence_mean': confidence.mean().detach(),
+                'confidence_std': confidence.std().detach(),
+                'quantum_usage': uncertain_mask.float().mean().detach(),
+            }
 
         return logits
 

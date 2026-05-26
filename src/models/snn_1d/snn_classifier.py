@@ -250,6 +250,7 @@ class SNN1D(nn.Module):
         timesteps: int = 8,  # Optimized for speed (8 timesteps gives similar accuracy with 3x speedup)
     ):
         super().__init__()
+        self.in_channels = in_channels
         self.use_attention = use_attention
         self.timesteps = timesteps
         self.spike_stats = {}  # For monitoring spike rates during training
@@ -282,9 +283,9 @@ class SNN1D(nn.Module):
     def _prepare_input(self, x: torch.Tensor) -> torch.Tensor:
         """Normalize raw EEG into a stable spike-probability-like range."""
         # === Handle channel mismatch ===
-        if x.shape[1] < 6:
+        if x.shape[1] < self.in_channels:
             pad = torch.zeros(
-                x.shape[0], 6 - x.shape[1], x.shape[2],
+                x.shape[0], self.in_channels - x.shape[1], x.shape[2],
                 device=x.device, dtype=x.dtype,
             )
             x = torch.cat([x, pad], dim=1)
@@ -294,26 +295,25 @@ class SNN1D(nn.Module):
         x_max = x.view(B, -1).max(dim=1, keepdim=True)[0]
         x_norm = (x - x_min.view(-1, 1, 1)) / (x_max.view(-1, 1, 1) - x_min.view(-1, 1, 1) + 1e-8)
 
-        return x_norm * 0.3
+        return x_norm
 
     def extract_features(self, x: torch.Tensor) -> torch.Tensor:
         """Return the fused 1D representation before the classifier."""
         x_spike_prob = self._prepare_input(x)
 
-        self.spike_stats = {'stage_rates': [], 'total_spikes': 0}
-
         s1, reg1 = self.stage1(x_spike_prob)
-        self.spike_stats['stage_rates'].append(s1.mean().item())
-
         s2, reg2 = self.stage2(s1)
-        self.spike_stats['stage_rates'].append(s2.mean().item())
-
         s3, reg3 = self.stage3(s2)
-        self.spike_stats['stage_rates'].append(s3.mean().item())
+
+        # Store detached tensors without calling .item() to avoid CUDA sync during training
+        self.spike_stats = {
+            'stage_rates': [s1.mean().detach(), s2.mean().detach(), s3.mean().detach()],
+            'total_spikes': 0
+        }
+        self.spike_stats['avg_rate'] = sum(self.spike_stats['stage_rates']) / len(self.spike_stats['stage_rates'])
 
         features = self.fusion(s1, s2, s3)
         self._reg_loss = reg1 + reg2 + reg3
-        self.spike_stats['avg_rate'] = sum(self.spike_stats['stage_rates']) / len(self.spike_stats['stage_rates'])
 
         return features
 

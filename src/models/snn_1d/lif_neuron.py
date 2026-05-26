@@ -56,7 +56,7 @@ class LIFNeuron(nn.Module):
     def __init__(
         self,
         threshold: float = 1.0,
-        tau: float = 2.2,
+        tau: float = 0.9,
         spike_reg: float = 0.001,
     ):
         super().__init__()
@@ -126,7 +126,7 @@ class LIFLayer(nn.Module):
         tau: LIF leak factor
     """
 
-    def __init__(self, channels: int, threshold: float = 1.0, tau: float = 2.2):
+    def __init__(self, channels: int, threshold: float = 1.0, tau: float = 0.9):
         super().__init__()
         self.bn = nn.InstanceNorm1d(channels, affine=True)
         self.lif = LIFNeuron(threshold=threshold, tau=tau)

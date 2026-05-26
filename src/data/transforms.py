@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from typing import Optional, Tuple, Union, Literal
 import warnings
+from scipy.ndimage import zoom
 
 
 class WaveletTransform:
@@ -149,8 +150,6 @@ class WaveletTransform:
     
     def _resize(self, scalogram: np.ndarray) -> np.ndarray:
         """Resize scalogram to target output size using bilinear interpolation."""
-        from scipy.ndimage import zoom
-        
         h, w = scalogram.shape
         target_h, target_w = self.output_size
         
