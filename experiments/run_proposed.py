@@ -13,6 +13,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=80)
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--use-wandb', action='store_true', help='Log to Weights & Biases')
     args = parser.parse_args()
 
     config = TrainingConfig(
@@ -20,7 +21,8 @@ def main():
         batch_size=args.batch_size,
         device=args.device,
         n_folds=args.folds,
-        results_csv='results/canonical_results.csv'
+        results_csv='results/canonical_results.csv',
+        use_wandb=args.use_wandb
     )
 
     print(f"Running proposed QSpikeXAI-Net on task {args.task} for {args.folds} folds...")

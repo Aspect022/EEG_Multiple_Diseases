@@ -11,10 +11,10 @@ def test_import(package_name, import_name=None):
     
     try:
         __import__(import_name)
-        print(f"✓ {package_name:30s} - OK")
+        print(f"OK   {package_name:30s}")
         return True
     except ImportError as e:
-        print(f"✗ {package_name:30s} - FAILED: {str(e)}")
+        print(f"FAIL {package_name:30s} - error: {str(e)}")
         return False
 
 print("=" * 70)
@@ -34,7 +34,7 @@ core_packages = [
     ("tqdm", "tqdm"),
 ]
 
-print("\n📦 Core Packages:")
+print("\n[Core Packages]")
 core_results = [test_import(name, imp) for name, imp in core_packages]
 
 # ML packages
@@ -45,7 +45,7 @@ ml_packages = [
     ("Einops", "einops"),
 ]
 
-print("\n🤖 Machine Learning Packages:")
+print("\n[Machine Learning Packages]")
 ml_results = [test_import(name, imp) for name, imp in ml_packages]
 
 # SNN packages
@@ -53,7 +53,7 @@ snn_packages = [
     ("snnTorch", "snntorch"),
 ]
 
-print("\n⚡ Spiking Neural Network Packages:")
+print("\n[Spiking Neural Network Packages]")
 snn_results = [test_import(name, imp) for name, imp in snn_packages]
 
 # Quantum packages
@@ -61,7 +61,7 @@ quantum_packages = [
     ("PennyLane", "pennylane"),
 ]
 
-print("\n🔬 Quantum Computing Packages:")
+print("\n[Quantum Computing Packages]")
 quantum_results = [test_import(name, imp) for name, imp in quantum_packages]
 
 # Medical packages
@@ -70,7 +70,7 @@ medical_packages = [
     ("NeuroKit2", "neurokit2"),
 ]
 
-print("\n🏥 Medical Signal Processing Packages:")
+print("\n[Medical Signal Processing Packages]")
 medical_results = [test_import(name, imp) for name, imp in medical_packages]
 
 # Utility packages
@@ -80,7 +80,7 @@ utility_packages = [
     ("Jupyter", "jupyter"),
 ]
 
-print("\n🛠️  Utility Packages:")
+print("\n[Utility Packages]")
 utility_results = [test_import(name, imp) for name, imp in utility_packages]
 
 # Summary
@@ -90,19 +90,19 @@ total_packages = len(core_packages) + len(ml_packages) + len(snn_packages) + \
 total_success = sum(core_results) + sum(ml_results) + sum(snn_results) + \
                 sum(quantum_results) + sum(medical_results) + sum(utility_results)
 
-print(f"📊 Summary: {total_success}/{total_packages} packages installed successfully")
+print(f"Summary: {total_success}/{total_packages} packages installed successfully")
 
 if total_success == total_packages:
-    print("✅ All packages installed correctly! You're ready to go! 🚀")
+    print("SUCCESS: All packages installed correctly! You are ready to go!")
 else:
-    print(f"⚠️  {total_packages - total_success} package(s) missing. Please install them.")
+    print(f"WARNING: {total_packages - total_success} package(s) missing. Please install them.")
     print("\nMissing packages can be installed with:")
     print("pip install <package_name>")
 
 print("=" * 70)
 
 # Additional system info
-print("\n🖥️  System Information:")
+print("\n[System Information]")
 print(f"Python version: {sys.version}")
 
 try:
@@ -112,4 +112,4 @@ try:
     if torch.cuda.is_available():
         print(f"CUDA version: {torch.version.cuda}")
 except:
-    pass
+    pass

@@ -28,6 +28,13 @@ class Trainer:
         self.device = torch.device(config.device if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
         
+        self.wandb_active = False
+        try:
+            import wandb
+            self.has_wandb = True
+        except ImportError:
+            self.has_wandb = False
+        
     def _apply_eeg_augmentation(self, x: torch.Tensor) -> torch.Tensor:
         """Apply EEG-specific augmentation during training only."""
         # 1. Gaussian noise
@@ -49,6 +56,30 @@ class Trainer:
 
     def fit(self, train_loader, val_loader, fold: int = 0) -> dict:
         """Run the complete training protocol."""
+        # Initialize wandb if enabled
+        if self.has_wandb and getattr(self.config, 'use_wandb', False):
+            try:
+                import wandb
+                wandb.init(
+                    project=f"qspikexai-{self.task}",
+                    name=f"{self.model.__class__.__name__}_fold{fold}",
+                    config={
+                        "learning_rate": self.config.lr,
+                        "weight_decay": self.config.weight_decay,
+                        "epochs": self.config.epochs,
+                        "batch_size": self.config.batch_size,
+                        "optimizer": self.config.optimizer,
+                        "scheduler": self.config.scheduler,
+                        "seed": self.config.seed,
+                        "device": self.device.type,
+                    },
+                    reinit=True
+                )
+                self.wandb_active = True
+            except Exception as e:
+                print(f"[!] wandb init failed: {e}. Running without wandb.")
+                self.wandb_active = False
+
         # Calculate class weights for imbalanced targets
         train_labels = []
         for _, _, y in train_loader:
@@ -149,6 +180,15 @@ class Trainer:
             else:
                 early_stop_counter += 1
                 
+            # Log to wandb if active
+            if self.wandb_active:
+                import wandb
+                wandb.log({
+                    "epoch": epoch,
+                    "train_loss": train_loss,
+                    **{f"val_{k}": v for k, v in val_metrics.items() if isinstance(v, (int, float))}
+                })
+
             if early_stop_counter >= self.config.early_stop_patience:
                 # Early stop triggered
                 break
@@ -189,6 +229,11 @@ class Trainer:
             
         log_experiment(log_data, filepath=self.config.results_csv)
         
+        # Close wandb run if active
+        if self.wandb_active:
+            import wandb
+            wandb.finish()
+
         return best_metrics
 
     def evaluate(self, dataloader) -> dict:
@@ -239,4 +284,5 @@ class TrainingConfig:
     checkpoint_metric: str = 'macro_f1'
     log_gate_weights: bool = True
     results_csv:     str   = 'results/canonical_results.csv'
+    use_wandb:       bool  = False
 

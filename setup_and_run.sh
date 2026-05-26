@@ -27,6 +27,29 @@ echo "Installing dependencies from requirements.txt..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
+# 3.5. Weights & Biases Authentication
+echo "------------------------------------------------------------------------"
+echo "                 Weights & Biases (W&B) Setup"
+echo "------------------------------------------------------------------------"
+if [[ -n "${WANDB_API_KEY:-}" ]]; then
+    python3 -c "import wandb; wandb.login(key='${WANDB_API_KEY}', relogin=True)"
+    echo "[OK] W&B logged in via WANDB_API_KEY environment variable."
+else
+    if [ -t 0 ]; then
+        echo "This project uses Weights & Biases (W&B) to track metrics and training curves."
+        read -p "Would you like to log in to W&B now? [y/N]: " login_choice
+        if [[ "$login_choice" =~ ^[Yy]$ ]]; then
+            echo "Please retrieve your API key from https://wandb.ai/authorize"
+            python3 -m wandb login
+        else
+            echo "W&B login skipped. Runs will log to CSV locally. To use W&B, run: python3 -m wandb login"
+        fi
+    else
+        echo "Non-interactive shell detected. Skipping W&B authentication prompt."
+        echo "To authenticate later, run: python3 -m wandb login"
+    fi
+fi
+
 # 4. Create raw data directories
 echo "Creating data directories..."
 mkdir -p data/apnea-ecg
