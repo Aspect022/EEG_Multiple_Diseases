@@ -64,3 +64,10 @@ results/wandb_export_*.csv
 #   outputs/results/experiment_summary.json
 #   outputs/results/experiment_summary.md
 # ==============================================
+data/
+outputs/
+checkpoints/
+wandb/
+tensorboard/
+*.pt
+*.pth

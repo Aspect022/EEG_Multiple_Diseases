@@ -1,0 +1,48 @@
+﻿# Core Deep Learning (Latest stable versions)
+
+# Spiking Neural Networks
+
+# Transformers & Vision Models
+timm>=0.9.0
+einops>=0.7.0
+
+# EEG Signal Processing
+mne>=1.5.0
+wfdb>=4.0.0
+neurokit2>=0.2.0
+
+# Data Processing & Visualization
+numpy>=1.24.0,<2.0.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+opencv-python>=4.8.0
+Pillow>=10.0.0
+albumentations>=1.3.0
+
+# Visualization
+matplotlib>=3.8.0
+seaborn>=0.13.0
+plotly>=5.18.0
+
+# Experiment Tracking
+tensorboard>=2.15.0
+tqdm>=4.66.0
+wandb>=0.16.0
+
+# Configuration
+pyyaml>=6.0.0
+python-dotenv>=1.0.0
+
+# AWS S3 Download (for OpenNeuro datasets)
+awscli>=1.30.0
+
+# Testing
+pytest>=7.4.0
+
+# Utilities
+ipykernel>=6.27.0
+jupyterlab>=4.0.0
+fvcore
+thop
+nbformat

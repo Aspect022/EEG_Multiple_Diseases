@@ -71,7 +71,7 @@ class ApneaConfig:
     
     # Training
     BATCH_SIZE = 32
-    LEARNING_RATE = 1e-3
+    LEARNING_RATE = 1e-4
     NUM_EPOCHS = 30
     WEIGHT_DECAY = 1e-4
     EARLY_STOPPING_PATIENCE = 10
@@ -289,17 +289,14 @@ class ApneaECGDataset(Dataset):
         
         for record_file in record_files:
             record_name = record_file.stem
-            # Load annotation
-            ann_file = self.data_dir / f"{record_name}.apn"
-            if ann_file.exists():
-                with open(ann_file, 'r') as f:
-                    annotations = f.readlines()
-                
-                # Convert to binary apnea/no-apnea per minute
-                for ann in annotations:
-                    label = 1 if ann.strip() in ['A', 'H', 'O'] else 0
+            try:
+                ann = wfdb.rdann(str(record_file).replace(".dat", ""), "apn")
+                for symbol in ann.symbol:
+                    label = 1 if symbol in ["A", "H", "O"] else 0
                     self.records.append(str(record_file))
                     self.labels.append(label)
+            except Exception as e:
+                print(f"[WARN] Failed loading annotations for {record_name}: {e}")
         
         print(f"[Apnea-ECG] Loaded {len(self.labels)} samples")
     
@@ -319,10 +316,17 @@ class ApneaECGDataset(Dataset):
         
         # Convert to spectrogram
         # (simplified - in practice use proper STFT)
-        spec = np.random.randn(1, 224, 224).astype(np.float32)
-        
+        from scipy.signal import spectrogram
+        f, t, Sxx = spectrogram(signal, fs=100)
+        spec = np.log1p(np.abs(Sxx) + 1e-8)
+        spec = np.nan_to_num(spec, nan=0.0, posinf=0.0, neginf=0.0)
+        spec_mean = spec.mean()
+        spec_std = spec.std()
+        spec = (spec - spec_mean) / (spec_std + 1e-6)
+        spec = np.clip(spec, -5, 5)
+        spec = np.resize(spec, (224, 224)).astype(np.float32)
         label = int(self.labels[idx])
-        
+        spec = np.expand_dims(spec, axis=0)
         return torch.from_numpy(spec).float(), label
 
 
@@ -564,7 +568,7 @@ class ApneaTrainer:
                                      lr=config.LEARNING_RATE,
                                      weight_decay=config.WEIGHT_DECAY)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='max', factor=0.5, patience=3, verbose=True
+            self.optimizer, mode='max', factor=0.5, patience=3
         )
         
         self.scaler = GradScaler()
@@ -579,14 +583,19 @@ class ApneaTrainer:
         total = 0
         
         pbar = tqdm(self.train_loader, desc='Training')
-        for batch_idx, (specs, raw, labels) in enumerate(pbar):
+        for batch_idx, batch in enumerate(pbar):
+            if len(batch) == 3:
+                specs, raw, labels = batch
+            else:
+                specs, labels = batch
+                raw = specs
             specs = specs.to(self.config.DEVICE)
             raw = raw.to(self.config.DEVICE)
             labels = labels.to(self.config.DEVICE)
             
             self.optimizer.zero_grad()
             
-            with autocast():
+            with torch.autocast(device_type="cuda", enabled=False):
                 if isinstance(self.model, ViTBiLSTMHybrid):
                     outputs = self.model(specs, raw)
                 else:
@@ -619,7 +628,12 @@ class ApneaTrainer:
         correct = 0
         total = 0
         
-        for specs, raw, labels in self.val_loader:
+        for batch in self.val_loader:
+            if len(batch) == 3:
+                specs, raw, labels = batch
+            else:
+                specs, labels = batch
+                raw = specs
             specs = specs.to(self.config.DEVICE)
             raw = raw.to(self.config.DEVICE)
             labels = labels.to(self.config.DEVICE)
@@ -701,7 +715,7 @@ def main():
                        help='Number of epochs')
     parser.add_argument('--batch-size', type=int, default=32,
                        help='Batch size')
-    parser.add_argument('--lr', type=float, default=1e-3,
+    parser.add_argument('--lr', type=float, default=1e-4,
                        help='Learning rate')
     parser.add_argument('--ssl-pretrain', action='store_true',
                        help='Use self-supervised pretraining')
@@ -742,13 +756,13 @@ def main():
     
     # Create dataloaders (placeholder)
     # In practice, implement proper data loading
-    train_dataset = SHHSDataset(config.DATA_DIR, split='train')
-    val_dataset = SHHSDataset(config.DATA_DIR, split='val')
+    train_dataset = ApneaECGDataset("data/apnea-ecg-database-1.0.0", split="train")
+    val_dataset = ApneaECGDataset("data/apnea-ecg-database-1.0.0", split="val")
     
     train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE,
-                             shuffle=True, num_workers=4)
+                             shuffle=True, num_workers=2)
     val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE,
-                           shuffle=False, num_workers=4)
+                           shuffle=False, num_workers=2)
     
     # Train
     trainer = ApneaTrainer(model, train_loader, val_loader, config)

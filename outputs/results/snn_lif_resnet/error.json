@@ -1,7 +1,7 @@
 {
   "experiment": "snn_lif_resnet",
   "name": "SNN-ResNet18-LIF",
-  "error": "'precision'",
-  "duration_seconds": 7484.559167385101,
-  "timestamp": "2026-03-08T00:45:52.312844"
+  "error": "CUDA out of memory. Tried to allocate 50.00 MiB. GPU 0 has a total capacity of 7.96 GiB of which 0 bytes is free. Including non-PyTorch memory, this process has 17179869184.00 GiB memory in use. Of the allocated memory 17.18 GiB is allocated by PyTorch, and 147.28 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)",
+  "duration_seconds": 293.18510127067566,
+  "timestamp": "2026-05-29T02:55:46.552878"
 }
